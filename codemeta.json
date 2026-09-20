@@ -1,0 +1,51 @@
+{
+  "@context": "https://doi.org/10.5063/schema/codemeta-2.0",
+  "@type": "SoftwareSourceCode",
+  "name": "rapidMQI",
+  "description": "The Masonry Quality Index of Borri and De Maria computed in the browser from a photograph of the wall: the seven parameters assessed against the criteria of the original tables, the minimum length ratio and the block dimensions measured on the image, the index and its category for vertical, in-plane and out-of-plane actions, and the mechanical properties given by the published correlation curves, compared against the reference values of the Italian code table.",
+  "identifier": "https://github.com/gcastellazzi/rapidMQI",
+  "codeRepository": "https://github.com/gcastellazzi/rapidMQI",
+  "url": "https://gcastellazzi.github.io/rapidMQI/app/",
+  "issueTracker": "https://github.com/gcastellazzi/rapidMQI/issues",
+  "license": "https://spdx.org/licenses/MIT",
+  "version": "0.1.0",
+  "dateModified": "2026-09-20",
+  "programmingLanguage": [
+    { "@type": "ComputerLanguage", "name": "JavaScript", "version": "ES2022 modules" }
+  ],
+  "runtimePlatform": ["Any modern web browser", "Node.js >= 18 (tests only)"],
+  "operatingSystem": ["Any"],
+  "softwareRequirements": [],
+  "developmentStatus": "active",
+  "applicationCategory": "Structural engineering",
+  "keywords": [
+    "masonry quality index",
+    "historic masonry",
+    "seismic vulnerability",
+    "visual inspection",
+    "masonry texture",
+    "rule of the art",
+    "structural engineering education"
+  ],
+  "referencePublication": {
+    "@type": "ScholarlyArticle",
+    "name": "A method for the analysis and classification of historic masonry",
+    "identifier": "https://doi.org/10.1007/s10518-015-9731-4",
+    "datePublished": "2015"
+  },
+  "author": [
+    {
+      "@type": "Person",
+      "givenName": "Giovanni",
+      "familyName": "Castellazzi",
+      "email": "giovanni.castellazzi@unibo.it",
+      "affiliation": { "@type": "Organization", "name": "DICAM, University of Bologna" }
+    }
+  ],
+  "maintainer": {
+    "@type": "Person",
+    "givenName": "Giovanni",
+    "familyName": "Castellazzi",
+    "email": "giovanni.castellazzi@unibo.it"
+  }
+}

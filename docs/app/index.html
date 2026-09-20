@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>rapidMQI — the Masonry Quality Index from a photograph</title>
+<meta name="description" content="The Masonry Quality Index of Borri and De Maria, parameter by parameter, from a photograph of the wall.">
+<link rel="stylesheet" href="../css/ui-kit.css">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <span class="brandmark" aria-hidden="true">&#9638;</span>
+    <div>
+      <h1>rapidMQI</h1>
+      <p>Masonry Quality Index</p>
+    </div>
+  </div>
+  <p class="header-note">The seven parameters of Borri and De Maria, read off a photograph of the wall</p>
+  <a class="header-link" href="../index.html">User guide &#8599;</a>
+</header>
+
+<main>
+  <section id="stage">
+    <div class="toolbar" role="toolbar" aria-label="Photograph">
+      <label class="btn file-btn">Load photo
+        <input type="file" id="photoFile" accept="image/*">
+      </label>
+      <label class="btn file-btn" id="cameraBtn" hidden>Camera
+        <input type="file" id="photoCamera" accept="image/*" capture="environment">
+      </label>
+      <span class="divider-v" aria-hidden="true"></span>
+      <button type="button" id="toolPan" class="tool active" data-tool="pan" title="Move the photograph">Pan</button>
+      <button type="button" id="toolScale" class="tool" data-tool="scale" title="Set the scale from a known distance">Scale</button>
+      <button type="button" id="toolRuler" class="tool" data-tool="ruler" title="Measure a block">Ruler</button>
+      <button type="button" id="toolPath" class="tool" data-tool="path" title="Trace a path through the mortar joints">Path</button>
+      <button type="button" id="toolMark" class="tool" data-tool="mark" title="Point at what justifies the outcome">Mark</button>
+      <span class="divider-v" aria-hidden="true"></span>
+      <button type="button" id="zoomOut" title="Zoom out">&minus;</button>
+      <button type="button" id="zoomIn" title="Zoom in">+</button>
+      <button type="button" id="zoomFit" title="Fit the photograph to the pane">Fit</button>
+      <span class="toolbar-spacer"></span>
+      <span id="scaleReadout" class="pill" hidden></span>
+    </div>
+    <canvas id="photo" tabindex="0" aria-label="The wall being surveyed"></canvas>
+    <p class="hint" id="hint">Load a photograph of the wall, set its scale from something of known length, then work through the seven parameters.</p>
+  </section>
+
+  <aside id="panel">
+    <div class="tabs" role="tablist">
+      <button class="tab active" id="tabSurvey" role="tab" aria-selected="true" data-pane="survey">Survey</button>
+      <button class="tab" id="tabResults" role="tab" aria-selected="false" data-pane="results">Results</button>
+      <button class="tab" id="tabProject" role="tab" aria-selected="false" data-pane="project">Project</button>
+    </div>
+
+    <div class="pane" id="paneSurvey">
+      <section class="panel-head-row">
+        <div class="field">
+          <span>This wall</span>
+          <input type="text" id="panelName" placeholder="North façade, ground floor">
+        </div>
+        <div class="two-up">
+          <label class="field"><span>Masonry</span>
+            <select id="panelFamily"></select>
+          </label>
+          <label class="field"><span>Leaves</span>
+            <select id="panelLeaves">
+              <option value="single">Single leaf</option>
+              <option value="double">Double leaf</option>
+              <option value="triple">Three or more</option>
+            </select>
+          </label>
+        </div>
+      </section>
+
+      <div class="steps" id="steps" role="tablist" aria-label="The seven parameters"></div>
+
+      <section id="step" class="step"></section>
+
+      <nav class="step-nav">
+        <button type="button" id="prevStep">&larr; Back</button>
+        <span id="stepCount" class="meta"></span>
+        <button type="button" id="nextStep" class="primary">Next &rarr;</button>
+      </nav>
+    </div>
+
+    <div class="pane" id="paneResults" hidden></div>
+
+    <div class="pane" id="paneProject" hidden>
+      <section>
+        <h2>Survey</h2>
+        <label class="field"><span>Name</span><input type="text" id="projectName"></label>
+        <div class="two-up">
+          <label class="field"><span>Site</span><input type="text" id="projectSite"></label>
+          <label class="field"><span>Date</span><input type="date" id="projectDate"></label>
+        </div>
+        <label class="field"><span>Surveyor</span><input type="text" id="projectSurveyor"></label>
+      </section>
+
+      <section>
+        <div class="panel-head">
+          <h2>Panels</h2>
+          <button type="button" id="addPanel" class="subtle">Add</button>
+        </div>
+        <div id="panelList" class="panel-list"></div>
+      </section>
+
+      <section id="comparisonSection">
+        <h2>The building, wall by wall</h2>
+        <div id="projectTable"></div>
+      </section>
+
+      <section>
+        <h2>Files</h2>
+        <div class="button-row">
+          <button type="button" id="saveFile" class="primary">Save survey</button>
+          <label class="btn file-btn">Open survey
+            <input type="file" id="openFile" accept=".json,application/json">
+          </label>
+          <button type="button" id="printReport">Report</button>
+        </div>
+        <p class="help">The survey is saved as one JSON file with the photographs inside it, so it opens complete on any machine. The report prints what the paper calls a data sheet, one page per wall.</p>
+        <div class="button-row">
+          <button type="button" id="newProject" class="subtle">Start again</button>
+        </div>
+        <p id="storeNote" class="meta"></p>
+      </section>
+
+      <section>
+        <h2>Method</h2>
+        <label class="field"><span>Code table for the comparison</span>
+          <select id="editionSelect"></select>
+        </label>
+        <label class="field"><span>Shear strength read at</span>
+          <select id="tau0Select">
+            <option value="I">the in-plane index, as the paper's data sheets do</option>
+            <option value="V">the vertical index, as the axis of Fig. 10b says</option>
+          </select>
+        </label>
+        <p class="help" id="methodNote"></p>
+      </section>
+    </div>
+  </aside>
+</main>
+
+<div id="report" class="report" hidden aria-hidden="true"></div>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

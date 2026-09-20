@@ -1,0 +1,44 @@
+{
+  "name": "rapidmqi",
+  "version": "0.1.0",
+  "description": "Masonry Quality Index (Borri & De Maria) from a photograph, parameter by parameter, in the browser",
+  "license": "MIT",
+  "author": "Giovanni Castellazzi <giovanni.castellazzi@unibo.it> (DICAM, University of Bologna)",
+  "homepage": "https://gcastellazzi.github.io/rapidMQI/app/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gcastellazzi/rapidMQI.git"
+  },
+  "bugs": {
+    "url": "https://github.com/gcastellazzi/rapidMQI/issues"
+  },
+  "keywords": [
+    "masonry",
+    "masonry-quality-index",
+    "MQI",
+    "historic-masonry",
+    "seismic-vulnerability",
+    "visual-inspection",
+    "rule-of-the-art",
+    "structural-engineering",
+    "education"
+  ],
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node tools/serve.js",
+    "test": "node --test"
+  },
+  "comment": [
+    "No dependencies and no build step, on purpose -- the same choice as",
+    "aLOTofImaginArches, whose interface kit this application vendors. docs/app",
+    "is plain ES modules served as-is by GitHub Pages, so the source a student",
+    "reads is the source that runs. This file exists so that Node knows the .js",
+    "files are modules, to name the test command, and to offer `npm start`.",
+    "The test script passes no path on purpose: `node --test tests/*.test.js`",
+    "relies on the SHELL to expand the glob, which cmd.exe does not do."
+  ]
+}

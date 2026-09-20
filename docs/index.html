@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>rapidMQI — the Masonry Quality Index, in the browser</title>
+  <meta name="description" content="How to use rapidMQI: the Masonry Quality Index of Borri and De Maria read off a photograph of the wall, parameter by parameter, with the classification and the mechanical properties that follow from it.">
+  <!-- The house style shared with the application, with aLOTofImaginArches and
+       with the other teaching apps: colours, type and the shape of a button
+       all come from there. This page sets its own reading layout below. -->
+  <link rel="stylesheet" href="css/ui-kit.css">
+  <style>
+    :root {
+      --max: 940px;
+      --nf: #b34a32;
+      --pf: #805e16;
+      --f: #1b6a45;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --page: #121a1a;
+        --foreground: #e4ece9;
+        --foreground-soft: #c2d2cd;
+        --muted-foreground: #9aada9;
+        --primary: #5fc0ad;
+        --primary-strong: #7ed3c0;
+        --primary-soft: #1b3630;
+        --surface: #1b2426;
+        --surface-muted: #1c2626;
+        --surface-sunken: #161f1f;
+        --border: #2b3838;
+        --border-strong: #3a4a49;
+        --nf: #e2937e;
+        --pf: #d8b15f;
+        --f: #74c39b;
+      }
+    }
+
+    body { background: var(--page); color: var(--foreground); }
+    .wrap { max-width: var(--max); margin: 0 auto; padding: 0 20px; }
+
+    header {
+      display: block;
+      border-bottom: 1px solid var(--border);
+      padding: 34px 0 28px;
+    }
+    header .wrap { display: flex; gap: 22px; align-items: flex-start; }
+    header .brandmark {
+      width: 56px; height: 56px; flex: 0 0 56px; font-size: 26px;
+      border-radius: var(--radius-lg);
+    }
+    header h1 { margin: 0 0 6px; font-size: 30px; letter-spacing: -0.4px; }
+    header p { margin: 0 0 10px; color: var(--foreground-soft); max-width: 62ch; }
+    .launch {
+      display: inline-block; margin-top: 6px; padding: 9px 16px;
+      background: var(--primary); color: var(--primary-foreground);
+      border-radius: var(--radius); text-decoration: none; font-weight: 700;
+    }
+    .launch:hover { background: var(--primary-strong); }
+
+    nav.toc { border-bottom: 1px solid var(--border); background: var(--surface); }
+    nav.toc .wrap { display: flex; flex-wrap: wrap; gap: 6px 16px; padding-top: 10px; padding-bottom: 10px; }
+    nav.toc a { font-size: 12px; color: var(--muted-foreground); text-decoration: none; }
+    nav.toc a:hover { color: var(--primary); }
+
+    main { padding: 10px 0 60px; }
+    section { padding: 26px 0; border-bottom: 1px solid var(--border); }
+    section:last-child { border-bottom: 0; }
+    h2 { font-size: 20px; margin: 0 0 10px; }
+    h3 { font-size: 15px; margin: 20px 0 6px; }
+    p, li { max-width: 74ch; color: var(--foreground-soft); }
+    strong { color: var(--foreground); }
+    .eq {
+      display: block; margin: 14px 0; padding: 12px 14px;
+      background: var(--surface-muted); border-left: 3px solid var(--primary);
+      border-radius: var(--radius-sm); font-family: var(--font-serif); font-size: 16px;
+      color: var(--foreground);
+    }
+    table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13px; }
+    th, td { padding: 6px 8px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
+    thead th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--muted-foreground); font-weight: 400; }
+    td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+    .o-NF { color: var(--nf); font-weight: 700; }
+    .o-PF { color: var(--pf); font-weight: 700; }
+    .o-F { color: var(--f); font-weight: 700; }
+    .note {
+      margin: 16px 0; padding: 12px 14px; background: var(--surface-muted);
+      border: 1px solid var(--border); border-radius: var(--radius);
+    }
+    .note p:last-child { margin-bottom: 0; }
+    footer { padding: 26px 0 50px; color: var(--muted-foreground); font-size: 12px; }
+    footer a { color: var(--primary); }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <span class="brandmark" aria-hidden="true">&#9638;</span>
+    <div>
+      <h1>rapidMQI</h1>
+      <p>
+        <strong>The Masonry Quality Index, in the browser.</strong> Photograph a wall, give the
+        photograph a scale, and answer seven questions about how it was built. The software turns
+        the answers into the index of Borri and De Maria, into a classification for vertical,
+        in-plane and out-of-plane actions, and into an estimate of the mechanical properties of
+        the masonry.
+      </p>
+      <p>
+        Written for the master's courses <em>Mechanics of Historical Masonry Structures</em> and
+        <em>Historical Masonry and Wooden Structures</em> at the University of Bologna, and free
+        for anyone to use. There is nothing to install: it is a static page that runs in the
+        browser of a phone held up against the wall.
+      </p>
+      <a class="launch" href="app/">Open the application &rarr;</a>
+    </div>
+  </div>
+</header>
+
+<nav class="toc" aria-label="Table of contents">
+  <div class="wrap">
+    <a href="#start">Start here</a>
+    <a href="#index">The index</a>
+    <a href="#seven">The seven parameters</a>
+    <a href="#photo">Reading a photograph</a>
+    <a href="#ml">The minimum length</a>
+    <a href="#unknown">What cannot be seen</a>
+    <a href="#result">The result</a>
+    <a href="#properties">Mechanical properties</a>
+    <a href="#files">Files and reports</a>
+    <a href="#decisions">Two editorial decisions</a>
+    <a href="#cite">How to cite</a>
+  </div>
+</nav>
+
+<main class="wrap">
+
+<section id="start">
+  <h2>Start here</h2>
+  <ol>
+    <li><strong>Load a photograph</strong> of the wall, or take one. Stand square to the wall if
+      you can: a face seen at a sharp angle cannot be measured.</li>
+    <li><strong>Set the scale.</strong> Pick <em>Scale</em>, click the two ends of something whose
+      length you know — a brick course, a door opening, a folding rule left against the wall — and
+      type that length. Everything measured afterwards is in metres.</li>
+    <li><strong>Work through the seven parameters.</strong> Each one shows the criteria of the
+      paper, and you choose Fulfilled, Partially fulfilled or Not fulfilled. For the leaf
+      connection and the vertical joints you can trace the path that decides it; for the block
+      dimensions you can measure a handful of blocks.</li>
+    <li><strong>Read the result.</strong> Three indices, three categories, and the mechanical
+      properties the correlation curves give.</li>
+    <li><strong>Save the survey</strong> to a file, and print the data sheet.</li>
+  </ol>
+  <p>
+    A survey of one wall takes a few minutes once the photograph is scaled. A building is several
+    walls: add a panel for each, and the Project pane compares them.
+  </p>
+</section>
+
+<section id="index">
+  <h2>The index</h2>
+  <p>
+    The Masonry Quality Index asks a single question — <em>was this wall built according to the
+    rule of the art?</em> — and breaks it into seven observable properties. Each is judged
+    Fulfilled (F), Partially fulfilled (PF) or Not fulfilled (NF), each outcome carries a number
+    from Table 8 of the paper, and six of the seven are added together:
+  </p>
+  <span class="eq">MQI = SM &middot; (SD + SS + WC + HJ + VJ + MM)</span>
+  <p>
+    The seventh, <strong>SM</strong>, is not added: it multiplies. The state of the blocks
+    themselves scales the quality of everything that was done with them, so a wall of decayed
+    stone cannot score highly however carefully it was coursed. SM runs from 0.3 to 1, the sum
+    from 0 to 10, and the index with it.
+  </p>
+  <p>
+    The numbers differ for the three loading conditions, because the same wall is not equally good
+    at three different jobs. The connection between the leaves is worth 1 point out of 10 when the
+    wall is merely carrying weight and 3 when it is being pushed out of plane; the staggering of
+    the vertical joints is worth 1 vertically and 2 in plane. So the index is computed three
+    times, and a wall can be class A for vertical actions and class C in plane.
+  </p>
+</section>
+
+<section id="seven">
+  <h2>The seven parameters</h2>
+  <table>
+    <thead>
+      <tr><th>&nbsp;</th><th>What it asks</th><th class="num">V</th><th class="num">I</th><th class="num">O</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><strong>SM</strong><br>Elements</td>
+        <td>What the blocks are made of and what state they are in. The multiplier.</td>
+        <td class="num">&times;1</td><td class="num">&times;1</td><td class="num">&times;1</td></tr>
+      <tr><td><strong>SD</strong><br>Dimensions</td>
+        <td>How large the blocks are: above 40 cm, between 20 and 40, below 20.</td>
+        <td class="num">1</td><td class="num">1</td><td class="num">1</td></tr>
+      <tr><td><strong>SS</strong><br>Shape</td>
+        <td>From pebbles to perfectly cut stone, and whether there are pinning stones.</td>
+        <td class="num">3</td><td class="num">2</td><td class="num">2</td></tr>
+      <tr><td><strong>WC</strong><br>Leaf connection</td>
+        <td>Whether the leaves are tied: headers, wall thickness, or the measured M<sub>l</sub>.</td>
+        <td class="num">1</td><td class="num">2</td><td class="num">3</td></tr>
+      <tr><td><strong>HJ</strong><br>Bed joints</td>
+        <td>Whether the bed joints run through, course by course.</td>
+        <td class="num">2</td><td class="num">1</td><td class="num">2</td></tr>
+      <tr><td><strong>VJ</strong><br>Vertical joints</td>
+        <td>Whether the vertical joints are staggered or line up from course to course.</td>
+        <td class="num">1</td><td class="num">2</td><td class="num">1</td></tr>
+      <tr><td><strong>MM</strong><br>Mortar</td>
+        <td>The quality of the mortar and how it bonds to the blocks.</td>
+        <td class="num">2</td><td class="num">2</td><td class="num">1</td></tr>
+    </tbody>
+  </table>
+  <p>
+    The columns are what each parameter is worth when it is fulfilled, under vertical, in-plane
+    and out-of-plane actions. They sum to 10 in each case. The application shows the same three
+    numbers beside every choice, so it is always visible what an answer is worth.
+  </p>
+</section>
+
+<section id="photo">
+  <h2>Reading a photograph</h2>
+  <p>
+    The photograph is not decoration. Three of the seven parameters can be measured on it rather
+    than merely judged, and the marks stay on the picture so that a reader of the report can see
+    what the outcome was based on.
+  </p>
+  <h3>Scale</h3>
+  <p>
+    One known distance turns pixels into metres. A chequered bar one metre long then appears on
+    the photograph, and every measurement is reported in centimetres or metres.
+  </p>
+  <h3>Ruler, for SD</h3>
+  <p>
+    Click the two ends of a block. Table 2 asks about <em>more than half</em> of the elements, so
+    what it wants is the median of a representative sample: measure a handful and the application
+    reports the median and which band it falls in.
+  </p>
+  <h3>Mark</h3>
+  <p>
+    A point on the photograph, attached to the parameter being assessed — the breach where the
+    section is visible, the one course of bricks that makes the bed joints continuous, the decayed
+    stones that settle SM.
+  </p>
+</section>
+
+<section id="ml">
+  <h2>The minimum length M<sub>l</sub></h2>
+  <p>
+    Two of the parameters have a quantitative criterion, and it is the same idea in both cases.
+    Take two points about a metre apart and find the shortest path that joins them while running
+    <em>only through mortar joints</em>, never through a block. The ratio of that path to the
+    straight distance is M<sub>l</sub>:
+  </p>
+  <span class="eq">M<sub>l</sub> = (shortest path through the joints) / (straight distance)</span>
+  <p>
+    A wall of large, well interlocked blocks forces the path to wander, and M<sub>l</sub> is
+    large. A wall whose joints line up lets it run almost straight, and M<sub>l</sub> approaches 1
+    — which is another way of saying that a crack would run just as easily.
+  </p>
+  <table>
+    <thead><tr><th>Measured on</th><th>For</th><th class="o-NF">NF</th><th class="o-PF">PF</th><th class="o-F">F</th></tr></thead>
+    <tbody>
+      <tr><td>A visible wall section</td><td>WC, the leaf connection</td>
+        <td>below 1.25</td><td>1.25 to 1.55</td><td>above 1.55</td></tr>
+      <tr><td>The wall face, one leaf at a time</td><td>VJ, the vertical joints</td>
+        <td>below 1.4</td><td>1.4 to 1.6</td><td>above 1.6</td></tr>
+    </tbody>
+  </table>
+  <p>
+    Pick the <em>Path</em> tool and click along the joints from one point to the other, then
+    Finish. The application divides by the straight distance, says which outcome that implies, and
+    warns if the two ends are closer than the half metre below which the ratio stops describing
+    the texture of the wall and starts describing one joint.
+  </p>
+</section>
+
+<section id="unknown">
+  <h2>What cannot be seen</h2>
+  <p>
+    Some parameters cannot be assessed from outside. If no section is exposed, the connection
+    between the leaves is a guess; if nothing has been opened up, so is the mortar behind the
+    pointing. The paper assumes all seven are assigned. rapidMQI allows one to be left as
+    <strong>not determinable</strong>, and then reports the index as the interval it is known to
+    lie in — the value it would take if the missing parameter turned out to be NF, and the value
+    it would take if it turned out to be F.
+  </p>
+  <p>
+    The category may then be an interval too, and the application says so rather than choosing.
+    It also says which missing observation would close the widest part of the interval, which is
+    the useful question when there is time to go back to the building once.
+  </p>
+  <div class="note">
+    <p><strong>No mechanical properties are offered for an interval as if they were an estimate.</strong>
+    When the survey is incomplete the properties are shown as the widest values the correlation
+    allows, and labelled as such.</p>
+  </div>
+</section>
+
+<section id="result">
+  <h2>The result</h2>
+  <p>
+    Three indices, and a category for each. Category A is a masonry of good behaviour, B of
+    average quality, C inadequate. The thresholds differ by loading condition: out-of-plane
+    actions are judged most strictly, because the out-of-plane mechanism is the one that kills.
+  </p>
+  <table>
+    <thead><tr><th>Actions</th><th>C</th><th>B</th><th>A</th></tr></thead>
+    <tbody>
+      <tr><td>Vertical</td><td>0 to 2.5</td><td>2.5 to 5</td><td>5 to 10</td></tr>
+      <tr><td>In-plane</td><td>0 to 3</td><td>3 to 5</td><td>5 to 10</td></tr>
+      <tr><td>Out-of-plane</td><td>0 to 4</td><td>4 to 7</td><td>7 to 10</td></tr>
+    </tbody>
+  </table>
+  <p>
+    The Results pane also takes the index apart: what each parameter contributed, under each
+    loading condition, at the outcome that was chosen. It is worth reading before the number
+    is quoted anywhere.
+  </p>
+</section>
+
+<section id="properties">
+  <h2>Mechanical properties</h2>
+  <p>
+    Section 3 of the paper correlates the index with the mechanical parameters of the Italian code
+    table, by building 36 virtual wall panels from that table and its multiplication factors and
+    fitting an exponential through the lower and the upper bound of each range. The result is not
+    a value but a band:
+  </p>
+  <span class="eq">
+    f<sub>m</sub> = 0.937 e<sup>0.2232&nbsp;MQI</sup> to 1.6882 e<sup>0.1988&nbsp;MQI</sup> [MPa]<br>
+    &tau;<sub>0</sub> = 0.0189 e<sup>0.2168&nbsp;MQI</sup> to 0.0303 e<sup>0.1992&nbsp;MQI</sup> [MPa]<br>
+    E = 548.31 e<sup>0.1738&nbsp;MQI</sup> to 821.24 e<sup>0.1634&nbsp;MQI</sup> [MPa]
+  </span>
+  <p>
+    The application draws each band and marks where this wall falls on it, and compares the
+    estimate with whichever row of the code table the wall is declared to be. The comparison asks
+    whether the two bands <em>overlap</em>, not whether they agree: where they do not, either the
+    declared typology or one of the seven outcomes is worth revisiting. The shear modulus G is not
+    correlated in the paper and is derived as E/3, the ratio the code table holds; it is labelled
+    as derived wherever it appears.
+  </p>
+</section>
+
+<section id="files">
+  <h2>Files and reports</h2>
+  <p>
+    A survey is one JSON file, with the photographs inside it, so that it opens complete on any
+    machine six months later. A working copy is also kept in the browser, so that a phone going to
+    sleep in a courtyard does not cost a morning's work — but that copy is a convenience, not the
+    record: save the file.
+  </p>
+  <p>
+    The report prints one data sheet per wall, in the form the paper uses for its own worked
+    examples: the photograph, what the wall is made of, the seven outcomes in a strip, and the
+    analysis.
+  </p>
+</section>
+
+<section id="decisions">
+  <h2>Two editorial decisions</h2>
+  <p>
+    Anyone comparing this application against the paper will meet two places where it does not do
+    what the paper appears to say, and both are deliberate.
+  </p>
+  <h3>The categories of Table 9 are the right way round here</h3>
+  <p>
+    Table 9 as printed carries its column headers in the order A, B, C above ranges that run from
+    the lowest index to the highest. Read literally, MQI = 8.5 would be a category C masonry —
+    which contradicts the text, where A is "good behavior of masonry", and contradicts the paper's
+    own worked example in Fig. 12, where 8.5 / 9.0 / 9.5 is classified A / A / A. rapidMQI puts
+    the labels back the right way round: C is the lowest band, A the highest.
+  </p>
+  <h3>The shear strength is read at the in-plane index</h3>
+  <p>
+    The abscissa of Fig. 10 is labelled "MQI value (vertical actions)", but all three data sheets
+    in the paper read &tau;<sub>0</sub> at the in-plane index instead: Fig. 12 prints 0.133 to
+    0.182 MPa, which is the curve at 9.0 and not at 8.5, and Figs. 13 and 14 do the same. Three
+    examples agreeing is a rule, and it is the physically sensible one, since shear strength is
+    what governs the in-plane response. rapidMQI follows the data sheets, and the Project pane has
+    a switch for anyone who would rather follow the axis label.
+  </p>
+</section>
+
+<section id="cite">
+  <h2>How to cite</h2>
+  <p>The method is not ours. Cite the paper:</p>
+  <div class="note">
+    <p>A. Borri, M. Corradi, G. Castori, A. De Maria (2015). <em>A method for the analysis and
+    classification of historic masonry.</em> Bulletin of Earthquake Engineering 13:2647&ndash;2665.
+    DOI <a href="https://doi.org/10.1007/s10518-015-9731-4">10.1007/s10518-015-9731-4</a></p>
+  </div>
+  <p>
+    The software itself has a <code>CITATION.cff</code> in its repository. It is free software
+    under the MIT licence, and its source is what runs: plain modules, no build step, nothing
+    minified.
+  </p>
+</section>
+
+</main>
+
+<footer class="wrap">
+  <p>
+    rapidMQI &middot; Giovanni Castellazzi, DICAM, University of Bologna &middot;
+    <a href="https://github.com/gcastellazzi/rapidMQI">source on GitHub</a> &middot;
+    <a href="app/">open the application</a>
+  </p>
+  <p>
+    The interface kit is shared with
+    <a href="https://gcastellazzi.github.io/aLoTiA/">aLOTofImaginArches</a>.
+  </p>
+</footer>
+
+</body>
+</html>

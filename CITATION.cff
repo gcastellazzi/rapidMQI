@@ -1,0 +1,59 @@
+cff-version: 1.2.0
+title: rapidMQI
+message: >-
+  If you use this software, please cite it using the metadata from this file,
+  and cite the method itself: Borri, Corradi, Castori and De Maria (2015),
+  "A method for the analysis and classification of historic masonry",
+  Bulletin of Earthquake Engineering 13:2647-2665,
+  DOI 10.1007/s10518-015-9731-4.
+type: software
+authors:
+  - given-names: Giovanni
+    family-names: Castellazzi
+    email: giovanni.castellazzi@unibo.it
+    affiliation: >-
+      Department of Civil, Chemical, Environmental and Materials Engineering
+      (DICAM), University of Bologna, Italy
+repository-code: 'https://github.com/gcastellazzi/rapidMQI'
+url: 'https://gcastellazzi.github.io/rapidMQI/app/'
+abstract: >-
+  The Masonry Quality Index of Borri and De Maria, computed in the browser from
+  a photograph of the wall. A photograph is scaled from one known distance and
+  the seven parameters of the method are assessed against the criteria of the
+  original tables, with the minimum length ratio and the dimensions of the
+  blocks measured on the image itself. The index is returned for vertical,
+  in-plane and out-of-plane actions, with the category of each and with the
+  mechanical properties given by the published correlation curves, compared
+  against the reference values of the Italian code table. A parameter that
+  cannot be inspected may be left open, in which case the index is reported as
+  the interval it is known to lie in rather than as a number the survey has not
+  earned.
+keywords:
+  - masonry quality index
+  - historic masonry
+  - seismic vulnerability
+  - visual inspection
+  - rule of the art
+  - masonry texture
+  - structural engineering education
+license: MIT
+version: 0.1.0
+date-released: '2026-09-20'
+references:
+  - type: article
+    title: A method for the analysis and classification of historic masonry
+    authors:
+      - given-names: Antonio
+        family-names: Borri
+      - given-names: Marco
+        family-names: Corradi
+      - given-names: Giulio
+        family-names: Castori
+      - given-names: Alessandro
+        family-names: De Maria
+    journal: Bulletin of Earthquake Engineering
+    volume: 13
+    start: 2647
+    end: 2665
+    year: 2015
+    doi: 10.1007/s10518-015-9731-4
