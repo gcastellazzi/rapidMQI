@@ -14,7 +14,7 @@
  */
 
 import { ORDER, OUTCOME_IDS } from './tables.js';
-import { SCHEMA, makePanel, makeProject } from './project.js';
+import { SCHEMA, VIEW_IDS, makeImage, makePanel, makeProject } from './project.js';
 
 export const FILE_VERSION = SCHEMA;
 const STORE_KEY = 'rapidMQI.project';
@@ -27,7 +27,10 @@ export function serialise(project, { withPhotos = true } = {}) {
   copy.savedAt = new Date().toISOString();
   if (!withPhotos) {
     for (const panel of copy.panels) {
-      if (panel.photo) panel.photo = { ...panel.photo, src: null, omitted: true };
+      for (const view of VIEW_IDS) {
+        const image = panel.images?.[view];
+        if (image?.photo) image.photo = { ...image.photo, src: null, omitted: true };
+      }
     }
   }
   return copy;
@@ -103,12 +106,41 @@ function readPanel(raw) {
   });
 
   panel.assessment = readAssessment(raw.assessment, panel.name);
-  panel.photo = readPhoto(raw.photo);
-  panel.scale = readScale(raw.scale);
   panel.notes = isObject(raw.notes) ? { ...raw.notes } : {};
   panel.factors = Array.isArray(raw.factors) ? raw.factors.filter((f) => typeof f === 'string') : [];
-  panel.marks = Array.isArray(raw.marks) ? raw.marks.filter(isMark).map(readMark) : [];
+  panel.images = readImages(raw);
+  panel.view = VIEW_IDS.includes(raw.view) ? raw.view : 'face';
   return panel;
+}
+
+/**
+ * Schema 1 kept one photograph per panel, with its scale and its marks beside
+ * it; schema 2 keeps three, one for the face, one for a section and one for a
+ * block, each with its own. A file written by the older version is read into
+ * the face view, which is what its single photograph was.
+ */
+function readImages(raw) {
+  const images = Object.fromEntries(VIEW_IDS.map((id) => [id, makeImage()]));
+  if (isObject(raw.images)) {
+    for (const id of VIEW_IDS) {
+      const from = raw.images[id];
+      if (!isObject(from)) continue;
+      images[id] = {
+        photo: readPhoto(from.photo),
+        scale: readScale(from.scale),
+        marks: Array.isArray(from.marks) ? from.marks.filter(isMark).map(readMark) : [],
+        sketch: OUTCOME_IDS.includes(from.sketch) ? from.sketch : null,
+      };
+    }
+    return images;
+  }
+  images.face = {
+    photo: readPhoto(raw.photo),
+    scale: readScale(raw.scale),
+    marks: Array.isArray(raw.marks) ? raw.marks.filter(isMark).map(readMark) : [],
+    sketch: null,
+  };
+  return images;
 }
 
 function readAssessment(raw, panelName) {

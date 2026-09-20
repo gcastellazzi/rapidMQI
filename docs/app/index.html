@@ -25,6 +25,8 @@
 <main>
   <section id="stage">
     <div class="toolbar" role="toolbar" aria-label="Photograph">
+      <div class="viewtabs" id="viewTabs" role="tablist" aria-label="What is being looked at"></div>
+      <span class="divider-v" aria-hidden="true"></span>
       <label class="btn file-btn">Load photo
         <input type="file" id="photoFile" accept="image/*">
       </label>
@@ -47,6 +49,40 @@
     <canvas id="photo" tabindex="0" aria-label="The wall being surveyed"></canvas>
     <p class="hint" id="hint">Load a photograph of the wall, set its scale from something of known length, then work through the seven parameters.</p>
   </section>
+
+  <!-- The two views a camera usually cannot take: a section through the
+       thickness, which decides the connection between the leaves, and a
+       typical block, which decides the shape. Either can be photographed when
+       something is exposed, and drawn when nothing is. -->
+  <aside id="aux">
+    <section class="aux-cell" id="auxSection" data-view="section">
+      <div class="aux-head">
+        <h3>Wall section</h3>
+        <span class="pill">WC</span>
+      </div>
+      <div class="aux-body" id="auxSectionBody"></div>
+      <div class="aux-foot">
+        <label class="btn file-btn">Photo
+          <input type="file" id="sectionFile" accept="image/*">
+        </label>
+        <button type="button" class="subtle" data-clear="section">Clear</button>
+      </div>
+    </section>
+
+    <section class="aux-cell" id="auxBlock" data-view="block">
+      <div class="aux-head">
+        <h3>Typical block</h3>
+        <span class="pill">SS</span>
+      </div>
+      <div class="aux-body" id="auxBlockBody"></div>
+      <div class="aux-foot">
+        <label class="btn file-btn">Photo
+          <input type="file" id="blockFile" accept="image/*">
+        </label>
+        <button type="button" class="subtle" data-clear="block">Clear</button>
+      </div>
+    </section>
+  </aside>
 
   <aside id="panel">
     <div class="tabs" role="tablist">

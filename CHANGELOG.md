@@ -28,10 +28,21 @@ The first working version: a survey can be taken, saved, reopened and printed.
   ruler that reports the median block dimension against the thresholds of
   Table 2; a path tool that computes the minimum length ratio M_l and says
   which outcome it implies; marks tied to the parameter they justify.
+- **Three views of each wall** -- the face, a section through the thickness and
+  a typical block -- each with its own photograph, scale and marks, so that
+  M_l for the leaf connection is measured on a section, as the paper measures
+  it, and never with the face's scale.
+- **Hypothesis drawings** for the section and for the block, three per view,
+  one for each outcome. Picking one assesses WC or SS and records the drawing;
+  it is marked as drawn rather than photographed wherever it appears, including
+  on the report.
 - **Projects** of several panels, with a comparative table.
 - **Files**: one JSON survey with the photographs inside it, a working copy
-  kept in the browser, and a printed data sheet in the form of the paper's own
-  worked examples.
+  kept in the browser, and a report of two sheets per wall -- the data sheet of
+  the paper's own worked examples, with the photographs carrying the marks made
+  on them, and the results: indices, category bars, breakdown, properties, the
+  comparison with the code table, the reference values it was checked against
+  and the bands of Table 9.
 - **Tests**, including the three published data sheets and the fourteen rows of
   Table 12.
 
@@ -47,6 +58,14 @@ The first working version: a survey can be taken, saved, reopened and printed.
 - **Fig. 13 is not reproduced for vertical and in-plane actions**, and is not
   worked around. Eq. (1) on its printed outcomes gives 6.5 and 5.5 where the
   sheet prints 1.3 and 0.55; the disagreement is recorded in the test suite.
+
+### Fixed
+
+- Numbers were formatted by stripping trailing zeros unconditionally, which
+  turned 1500 MPa into 15 on the printed reference table.
+- The interface kit styles the `header` ELEMENT, so the headings of the two
+  side cells were inheriting a page banner and taking 70 pixels of a 200 pixel
+  cell. They are plain elements now, and the kit's rule is scoped to the page.
 
 ### Known gaps
 

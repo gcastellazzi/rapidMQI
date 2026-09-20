@@ -46,6 +46,15 @@ out-of-plane actions. The index runs from 0 to 10 in every case.
 - **The seven parameters, one at a time**, each with the criteria of the paper in front of you,
   filtered to stone or brick masonry, and with what each answer is worth in all three loading
   conditions shown beside it.
+- **Three views of the wall.** The face, a section through the thickness, and a typical block,
+  each with its own photograph, its own scale and its own marks -- because a section is
+  photographed from a different distance than a face, and measuring one with the other's scale
+  would be nonsense. M<sub>l</sub> for the leaf connection is measured on the section, where the
+  paper says it is measured.
+- **A drawing when there is nothing to photograph.** Most walls expose no section at all. For the
+  section and for the block, the application offers three diagrams -- one for each outcome -- and
+  picking the one the wall is understood to be assesses the parameter and records the drawing.
+  It is an inference rather than an observation, and it is labelled as one everywhere it appears.
 - **Measurement on the photograph.** One known distance sets the scale. The ruler measures blocks
   and reports the **median** against the 20 cm and 40 cm thresholds, because Table 2 asks about
   more than half of the elements. The path tool traces the shortest route through the mortar
@@ -61,8 +70,10 @@ out-of-plane actions. The index runs from 0 to 10 in every case.
 - **Comparison with the code table** by overlap of the two bands, so that a disagreement between
   the declared typology and the survey is visible instead of averaged away.
 - **A building, not a wall.** Several panels in one survey, with a comparative table.
-- **One file.** The survey is JSON with the photographs inside it; the report prints one data
-  sheet per wall in the form the paper uses for its own worked examples.
+- **One file.** The survey is JSON with the photographs inside it; the report prints two sheets
+  per wall -- the data sheet of the paper's own worked examples, with the photographs carrying the
+  marks that were made on them, and then the results: the indices, the category bars, the
+  breakdown, the properties and the comparison with the code table.
 
 ## Checked against the paper
 
@@ -113,7 +124,7 @@ docs/            what GitHub Pages serves
   css/ui-kit.css the house style, vendored from aLOTofImaginArches
   app/           the application
     js/core/     the method: tables, the index, the correlations, the survey model
-    js/render/   the photograph and the charts
+    js/render/   the photograph, the charts and the hypothesis drawings
 tests/           the Node test suite, including the paper's worked examples
 tools/serve.js   a static server, standard library only
 ```

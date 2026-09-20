@@ -27,10 +27,15 @@ import {
 } from './core/tables.js';
 import { outcomeFromMl } from './core/mqi.js';
 import {
+  VIEWS,
+  VIEW,
+  VIEW_IDS,
   activePanel,
   addPanel,
   duplicatePanel,
+  imageOf,
   makeProject,
+  marksOf,
   nextId,
   progressOf,
   removePanel,
@@ -48,7 +53,8 @@ import {
 } from './core/persist.js';
 import { blockStatistics, checkChord, measure, scaleFrom } from './core/measure.js';
 import { EDITIONS, FACTORS, edition, rowsOf } from './core/reference.js';
-import { createPhotoView } from './render/photo.js';
+import { annotate, createPhotoView } from './render/photo.js';
+import { SKETCHES, sketchCaption, sketchSVG } from './render/sketches.js';
 import { categoryBar, correlationChart } from './render/chart.js';
 
 // ------------------------------------------------------------- utilities --
@@ -59,7 +65,17 @@ const esc = (s) =>
     /[&<>"']/g,
     (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c],
   );
-const fmt = (v, n = 2) => (v == null ? '--' : Number(v).toFixed(n).replace(/\.?0+$/, '') || '0');
+/**
+ * A number with the decimals it is worth, and no trailing zeros -- but only
+ * after a decimal point. Stripping them unconditionally turned 1500 MPa into
+ * 15 on the printed reference table, which is the kind of thing a reader
+ * believes.
+ */
+const fmt = (v, n = 2) => {
+  if (v == null || !Number.isFinite(Number(v))) return '--';
+  const text = Number(v).toFixed(n);
+  return text.includes('.') ? text.replace(/\.?0+$/, '') || '0' : text;
+};
 
 const LEAVES = {
   single: 'Single-leaf wall',
@@ -75,6 +91,8 @@ let pendingScale = null;
 
 const panelOf = () => activePanel(project);
 const current = () => ORDER[step];
+/** The photograph being worked on: the face, the section or the block. */
+const imageNow = () => imageOf(panelOf());
 
 // ------------------------------------------------------------ the canvas --
 
@@ -117,9 +135,9 @@ function renderDraft(count, tool) {
 function setHint(text) {
   $('hint').textContent =
     text ??
-    (panelOf().photo
+    (imageNow().photo
       ? 'Pan and zoom freely; the tools above turn a click into a measurement.'
-      : 'Load a photograph of the wall, set its scale from something of known length, then work through the seven parameters.');
+      : VIEW[panelOf().view].hint);
 }
 
 /**
@@ -129,34 +147,44 @@ function setHint(text) {
  */
 function handlePoints(tool, points) {
   const panel = panelOf();
+  const record = imageOf(panel);
   if (tool === 'scale') {
     pendingScale = points;
     askForDistance(points);
     return;
   }
   if (tool === 'ruler') {
-    addMark(panel, { parameter: 'SD', kind: 'ruler', points });
+    addMark(record, { parameter: 'SD', kind: 'ruler', points });
   } else if (tool === 'path') {
-    const parameter = current() === 'WC' || current() === 'VJ' ? current() : 'VJ';
-    addMark(panel, { parameter, kind: 'path', points });
+    // A path traced on a section is about the connection between the leaves; a
+    // path traced on the face is about the vertical joints. Nothing about a
+    // section tells you how the vertical joints of the face are staggered, so
+    // the view decides there, and the step being worked on decides elsewhere.
+    const parameter =
+      panel.view === 'section'
+        ? 'WC'
+        : current() === 'WC' || current() === 'VJ'
+          ? current()
+          : 'VJ';
+    addMark(record, { parameter, kind: 'path', points });
     if (current() !== parameter) step = ORDER.indexOf(parameter);
   } else if (tool === 'mark') {
-    addMark(panel, { parameter: current(), kind: 'mark', points });
+    addMark(record, { parameter: current(), kind: 'mark', points });
   }
-  view.setPanel(panel);
+  view.refresh(record);
   render();
   save();
 }
 
-function addMark(panel, { parameter, kind, points }) {
-  panel.marks.push({ id: nextId('mark'), parameter, kind, points, label: '' });
-  labelMarks(panel);
+function addMark(record, { parameter, kind, points }) {
+  record.marks.push({ id: nextId('mark'), parameter, kind, points, label: '' });
+  labelMarks(record);
 }
 
 /** Labels are recomputed rather than stored: they are readings, not records. */
-function labelMarks(panel) {
-  for (const mark of panel.marks) {
-    const m = measure(mark.points, panel.scale);
+function labelMarks(record) {
+  for (const mark of record.marks) {
+    const m = measure(mark.points, record.scale);
     if (mark.kind === 'path') mark.label = m.ml != null ? `Mₗ ${m.ml.toFixed(2)}` : '';
     else if (mark.kind === 'ruler') {
       mark.label = m.pathMetres != null ? `${(m.pathMetres * 100).toFixed(0)} cm` : '';
@@ -179,14 +207,14 @@ function askForDistance(points) {
   $('refLength').select();
   $('applyScale').addEventListener('click', () => {
     const length = Number($('refLength').value);
-    const panel = panelOf();
+    const record = imageNow();
     const scale = scaleFrom(points[0], points[1], length);
     if (!scale) return;
-    panel.scale = scale;
-    labelMarks(panel);
+    record.scale = scale;
+    labelMarks(record);
     pendingScale = null;
     stageForm.hidden = true;
-    view.setPanel(panel);
+    view.refresh(record);
     setTool('pan');
     render();
     save();
@@ -269,12 +297,16 @@ function toolBox(panel, p) {
 
 function mlBox(panel, p) {
   const bounds = ML[p.quantitative].bounds;
-  const paths = panel.marks.filter((m) => m.kind === 'path' && m.parameter === p.id);
-  const readings = paths.map((mark) => {
-    const m = measure(mark.points, panel.scale);
-    const check = checkChord(m.chordMetres, ML.straightDistance);
-    const implied = outcomeFromMl(bounds, m.ml);
-    return { mark, m, check, implied };
+  // Every path traced for this parameter, on whichever photograph it was
+  // drawn, each measured against the scale of the photograph it belongs to.
+  const readings = marksOf(panel, 'path', p.id).map((mark) => {
+    const m = measure(mark.points, mark.scale);
+    return {
+      mark,
+      m,
+      check: checkChord(m.chordMetres, ML.straightDistance),
+      implied: outcomeFromMl(bounds, m.ml),
+    };
   });
 
   const list = readings.length
@@ -285,7 +317,7 @@ function mlBox(panel, p) {
             <span class="o-${r.implied ?? 'none'}">${r.implied ?? '--'}</span>
             <span class="meta">${
               r.m.chordMetres != null ? `over ${r.m.chordMetres.toFixed(2)} m` : 'unscaled'
-            }</span>
+            } &middot; ${esc(VIEW[r.mark.view].short.toLowerCase())}</span>
             <button type="button" data-drop-mark="${r.mark.id}" title="Remove">&times;</button>
           </li>`,
         )
@@ -293,27 +325,35 @@ function mlBox(panel, p) {
     : '';
 
   const warning = readings.find((r) => r.check.ok === false);
+  const unscaled = readings.some((r) => r.m.chordMetres == null);
+  const elsewhere =
+    p.id === 'WC' && readings.length === 0 && panel.view !== 'section'
+      ? '<p class="help">M\u2097 for the leaf connection is measured on a <b>section</b>. Open the ' +
+        'Wall section view on the right, load a photograph of a breach or a reveal, and trace it ' +
+        'there. If nothing is exposed, pick one of the three sections instead.</p>'
+      : '';
+
   return `<div class="tool-box">
     <h4>Minimum length M&#8348; &middot; ${esc(ML[p.quantitative].where)}</h4>
     <p class="help">Pick the <b>Path</b> tool and click along the mortar joints from one point to
       another about a metre away, then Finish. M&#8348; is that path divided by the straight
       distance: below ${bounds[0]} it is NF, above ${bounds[1]} it is F.</p>
+    ${elsewhere}
     ${list}
     ${warning ? `<p class="status warn">${esc(warning.check.message)}</p>` : ''}
     ${
-      !panel.scale
-        ? '<p class="status warn">The photograph has no scale yet, so Mₗ can be computed but not checked against the metre it should be measured over.</p>'
+      unscaled
+        ? '<p class="status warn">That photograph has no scale, so M\u2097 can be computed but not checked against the metre it should be measured over.</p>'
         : ''
     }
   </div>`;
 }
 
 function blockBox(panel) {
-  const rulers = panel.marks.filter((m) => m.kind === 'ruler');
-  const sizes = rulers
-    .map((mark) => measure(mark.points, panel.scale).pathMetres)
-    .filter((v) => v != null);
-  const stats = blockStatistics(sizes);
+  const rulers = marksOf(panel, 'ruler');
+  const measured = rulers.map((mark) => ({ mark, m: measure(mark.points, mark.scale) }));
+  const stats = blockStatistics(measured.map((r) => r.m.pathMetres));
+  const anyScale = VIEW_IDS.some((id) => panel.images[id].scale);
   return `<div class="tool-box">
     <h4>Block dimensions</h4>
     <p class="help">Pick the <b>Ruler</b> tool and click the two ends of a block. Table 2 asks
@@ -326,16 +366,16 @@ function blockBox(panel) {
           <p class="meta">${(stats.belowTwenty * 100).toFixed(0)}% below 20 cm &middot;
             ${(stats.twentyToForty * 100).toFixed(0)}% between &middot;
             ${(stats.aboveForty * 100).toFixed(0)}% above 40 cm</p>
-          <ul class="measured-list">${rulers
-            .map((mark) => {
-              const m = measure(mark.points, panel.scale);
-              return `<li><b>${
-                m.pathMetres != null ? `${(m.pathMetres * 100).toFixed(0)} cm` : '--'
-              }</b><button type="button" data-drop-mark="${mark.id}" title="Remove">&times;</button></li>`;
-            })
+          <ul class="measured-list">${measured
+            .map(
+              (r) => `<li><b>${
+                r.m.pathMetres != null ? `${(r.m.pathMetres * 100).toFixed(0)} cm` : '--'
+              }</b><span class="meta">${esc(VIEW[r.mark.view].short.toLowerCase())}</span>
+              <button type="button" data-drop-mark="${r.mark.id}" title="Remove">&times;</button></li>`,
+            )
             .join('')}</ul>`
         : `<p class="meta">${
-            panel.scale
+            anyScale
               ? 'Nothing measured yet.'
               : 'Set the scale of the photograph first, or a measurement is only pixels.'
           }</p>`
@@ -349,6 +389,54 @@ function renderResults() {
   const panel = panelOf();
   const s = summarise(panel, project);
 
+  const heads = resultHeads(s);
+
+  const missing = s.complete
+    ? ''
+    : `<div class="callout"><strong>${s.missing.length} parameter${
+        s.missing.length > 1 ? 's' : ''
+      } still open.</strong> The index is an interval until ${
+        s.missing.length > 1 ? 'they are' : 'it is'
+      } settled.
+      ${Object.entries(s.leverage)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 1)
+        .map(
+          ([id, gain]) =>
+            `Going back for <b>${id}</b> (${esc(PARAMETER[id].short)}) would close the widest part
+             of it, ${fmt(gain, 1)} points across the three loading conditions.`,
+        )
+        .join('')}</div>`;
+
+  const breakdown = breakdownTable(s);
+
+  $('paneResults').innerHTML = `
+    <section>
+      <h2>${esc(panel.name || 'This wall')}</h2>
+      <div class="result-head">${heads}</div>
+      ${missing}
+    </section>
+    <section>
+      <h2>Where the index comes from</h2>
+      ${breakdown}
+    </section>
+    <section>
+      <h2>Mechanical properties</h2>
+      ${propertiesSection(s)}
+    </section>
+    <section>
+      <h2>Against the code table</h2>
+      ${codeSection(s)}
+    </section>`;
+}
+
+/**
+ * The three indices with their category bars, and the table that takes the
+ * index apart. Both are wanted twice -- on the screen and on the printed
+ * sheet -- and a report that redrew them its own way would eventually stop
+ * agreeing with the application.
+ */
+function resultHeads(s) {
   const heads = DIRECTIONS.map((d) => {
     const r = s.indices[d.id];
     const c = r.category;
@@ -372,24 +460,11 @@ function renderResults() {
         )}</span>
       </div>`;
   }).join('');
+  return heads;
+}
 
-  const missing = s.complete
-    ? ''
-    : `<div class="callout"><strong>${s.missing.length} parameter${
-        s.missing.length > 1 ? 's' : ''
-      } still open.</strong> The index is an interval until ${
-        s.missing.length > 1 ? 'they are' : 'it is'
-      } settled.
-      ${Object.entries(s.leverage)
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 1)
-        .map(
-          ([id, gain]) =>
-            `Going back for <b>${id}</b> (${esc(PARAMETER[id].short)}) would close the widest part
-             of it, ${fmt(gain, 1)} points across the three loading conditions.`,
-        )
-        .join('')}</div>`;
-
+function breakdownTable(s) {
+  const panel = s.panel;
   const breakdown = `<table class="grid-table">
     <thead><tr><th>Parameter</th><th></th>${DIRECTIONS.map(
       (d) => `<th>${d.id}</th>`,
@@ -415,60 +490,51 @@ function renderResults() {
     </tbody></table>
     <p class="help">SM multiplies the other six, it is not added to them: the row above is the
       product. The columns are Table 8, read at the outcome chosen for each parameter.</p>`;
+  return breakdown;
+}
 
-  $('paneResults').innerHTML = `
-    <section>
-      <h2>${esc(panel.name || 'This wall')}</h2>
-      <div class="result-head">${heads}</div>
-      ${missing}
-    </section>
-    <section>
-      <h2>Where the index comes from</h2>
-      ${breakdown}
-    </section>
-    <section>
-      <h2>Mechanical properties</h2>
-      ${propertiesSection(s)}
-    </section>
-    <section>
-      <h2>Against the code table</h2>
-      ${codeSection(s)}
-    </section>`;
+/** How many decimals each property is worth quoting to. */
+const DECIMALS = { fm: 2, tau0: 3, E: 0, G: 0 };
+
+/** The four properties as a table, with the warning an interval deserves. */
+function propertiesTable(s) {
+  const p = s.properties;
+  if (!p) return '';
+  const rows = ['fm', 'tau0', 'E', 'G']
+    .map(
+      (id) => `<tr><td>${esc(p[id].symbol)} <span class="meta">${esc(p[id].name)}</span></td>
+        <td>${fmt(p[id].min, DECIMALS[id])}</td>
+        <td>${fmt(p[id].max, DECIMALS[id])}</td>
+        <td class="meta">${esc(p[id].unit)}${p[id].derived ? ' &middot; E/3' : ''}</td></tr>`,
+    )
+    .join('');
+
+  return `${
+    p.spread
+      ? '<p class="status warn">The survey is incomplete, so these are the widest values the ' +
+        'correlation allows over the interval of the index, not an estimate.</p>'
+      : ''
+  }
+    <table class="grid-table">
+      <thead><tr><th></th><th>min</th><th>max</th><th></th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
 }
 
 function propertiesSection(s) {
   const p = s.properties;
   if (!p) return '<p class="help">Assign the parameters and the correlation curves follow.</p>';
-  const spread = p.spread;
-  const rows = ['fm', 'tau0', 'E', 'G']
-    .map(
-      (id) => `<tr><td>${esc(p[id].symbol)} <span class="meta">${esc(p[id].name)}</span></td>
-        <td>${fmt(p[id].min, p[id].unit === 'MPa' && id !== 'E' && id !== 'G' ? 3 : 0)}</td>
-        <td>${fmt(p[id].max, p[id].unit === 'MPa' && id !== 'E' && id !== 'G' ? 3 : 0)}</td>
-        <td class="meta">${esc(p[id].unit)}${p[id].derived ? ' &middot; E/3' : ''}</td></tr>`,
-    )
-    .join('');
 
   const mqiV = s.complete ? s.values.V : [s.indices.V.min, s.indices.V.max];
   const mqiShear = s.complete
     ? s.values[p.tau0From]
     : [s.indices[p.tau0From].min, s.indices[p.tau0From].max];
 
-  return `
-    ${
-      spread
-        ? '<p class="status warn">The survey is incomplete, so these are the widest values the ' +
-          'correlation allows over the interval of the index, not an estimate.</p>'
-        : ''
-    }
-    <table class="grid-table">
-      <thead><tr><th></th><th>min</th><th>max</th><th></th></tr></thead>
-      <tbody>${rows}</tbody>
-    </table>
+  return `${propertiesTable(s)}
     <p class="help">Fig. 10 of the paper: f&#8344; and E are read at the vertical index,
       &tau;&#8320; at the ${p.tau0From === 'I' ? 'in-plane' : 'vertical'} one.</p>
-    ${correlationChart('fm', { mqi: mqiV, label: 'fₘ [MPa]' })}
-    ${correlationChart('tau0', { mqi: mqiShear, label: 'τ₀ [MPa]' })}
+    ${correlationChart('fm', { mqi: mqiV, label: 'f\u2098 [MPa]' })}
+    ${correlationChart('tau0', { mqi: mqiShear, label: '\u03c4\u2080 [MPa]' })}
     ${correlationChart('E', { mqi: mqiV, label: 'E [MPa]' })}`;
 }
 
@@ -489,6 +555,14 @@ function codeSection(s) {
     }><span>${esc(f.name)} &times;${f.factor}</span></label>`,
   ).join('');
 
+  return `<label class="field"><span>Typology, for the comparison</span>
+      <select id="typologySelect">${options}</select></label>
+    <details class="app-details"><summary>Table 11 factors</summary>${factors}</details>
+    ${codeTable(s)}`;
+}
+
+/** The comparison itself, without the controls: the screen and the report. */
+function codeTable(s) {
   const table = s.comparison
     ? `<table class="grid-table">
         <thead><tr><th></th><th>this wall</th><th>${esc(
@@ -512,11 +586,7 @@ function codeSection(s) {
             'the scale.'
       }</p>`
     : '<p class="help">Declare which row of the table this wall is meant to be, and the estimate is checked against it.</p>';
-
-  return `<label class="field"><span>Typology, for the comparison</span>
-      <select id="typologySelect">${options}</select></label>
-    <details class="app-details"><summary>Table 11 factors</summary>${factors}</details>
-    ${table}`;
+  return table;
 }
 
 // ------------------------------------------------------------ the project --
@@ -583,6 +653,121 @@ function renderProject() {
     'which is what the text and the worked examples mean.';
 }
 
+// ------------------------------------------------------- the other views --
+
+/**
+ * The strip that says what is being looked at. A view that already holds a
+ * photograph or a drawing is marked, so that a survey with nothing in the
+ * section view is visibly a survey with nothing in the section view.
+ */
+function renderViewTabs() {
+  const panel = panelOf();
+  $('viewTabs').innerHTML = VIEWS.map((v) => {
+    const image = panel.images[v.id];
+    const has = Boolean(image.photo || image.sketch);
+    return `<button type="button" class="${v.id === panel.view ? 'active' : ''} ${
+      has ? 'has-content' : ''
+    }" data-view="${v.id}" role="tab" aria-selected="${v.id === panel.view}"
+      title="${esc(v.hint)}"><span class="dot"></span>${esc(v.short)}</button>`;
+  }).join('');
+}
+
+function renderAux() {
+  const panel = panelOf();
+  for (const id of ['section', 'block']) {
+    const name = id[0].toUpperCase() + id.slice(1);
+    $(`aux${name}`).classList.toggle('active', panel.view === id);
+    $(`aux${name}Body`).innerHTML = auxBody(panel, id);
+  }
+}
+
+/**
+ * Either the photograph, as a thumbnail that opens it for measuring, or the
+ * three hypotheses. Choosing one of those is an assessment of the parameter
+ * the view belongs to, and it is applied as one.
+ */
+function auxBody(panel, id) {
+  const image = panel.images[id];
+  if (image.photo?.src) {
+    const marks = image.marks.length;
+    return `<button type="button" class="photo-thumb" data-open="${id}"
+        title="Open this photograph for measuring">
+        <img src="${image.photo.src}" alt="${esc(VIEW[id].name)}">
+      </button>
+      <p class="meta">${
+        image.scale ? `${image.scale.pixelsPerMetre.toFixed(0)} px/m` : 'no scale yet'
+      }${marks ? ` &middot; ${marks} mark${marks > 1 ? 's' : ''}` : ''}</p>`;
+  }
+  const chosen = SKETCHES[id].options.find((o) => o.outcome === image.sketch);
+  return `<div class="sketch-choice">${SKETCHES[id].options
+    .map(
+      (o) => `<button type="button" class="sketch-option ${
+        image.sketch === o.outcome ? 'chosen' : ''
+      }" data-sketch="${id}" data-outcome="${o.outcome}"
+        title="${esc(`${o.title}. ${o.caption}`)}">
+        ${sketchSVG(id, o.outcome)}<span class="badge">${o.outcome}</span>
+      </button>`,
+    )
+    .join('')}</div>
+    <p class="meta">${
+      chosen
+        ? `<b>${esc(chosen.title)}.</b> Drawn, not photographed.`
+        : esc(VIEW[id].noPhoto)
+    }</p>`;
+}
+
+async function setView(id) {
+  const panel = panelOf();
+  panel.view = VIEW_IDS.includes(id) ? id : 'face';
+  await view.show(imageOf(panel));
+  render();
+  save();
+}
+
+/**
+ * A drawing is an inference, and an inference about the section IS the answer
+ * to WC, so choosing one answers it -- and takes the wizard to that parameter,
+ * where the criteria of the table can be read against the choice just made.
+ */
+function chooseSketch(id, outcome) {
+  const panel = panelOf();
+  const image = panel.images[id];
+  image.sketch = image.sketch === outcome ? null : outcome;
+  const parameter = VIEW[id].parameter;
+  if (image.sketch && parameter) {
+    panel.assessment[parameter] = image.sketch;
+    step = ORDER.indexOf(parameter);
+  }
+  render();
+  save();
+}
+
+$('viewTabs').addEventListener('click', (event) => {
+  const button = event.target.closest('[data-view]');
+  if (button) setView(button.dataset.view);
+});
+
+$('aux').addEventListener('click', (event) => {
+  const open = event.target.closest('[data-open]');
+  if (open) {
+    setView(open.dataset.open);
+    return;
+  }
+  const sketch = event.target.closest('[data-sketch]');
+  if (sketch) {
+    chooseSketch(sketch.dataset.sketch, sketch.dataset.outcome);
+    return;
+  }
+  const clear = event.target.closest('[data-clear]');
+  if (!clear) return;
+  const panel = panelOf();
+  const id = clear.dataset.clear;
+  panel.images[id] = { photo: null, scale: null, marks: [], sketch: null };
+  if (panel.view === id) view.show(panel.images[id]);
+  render();
+  save();
+});
+
 // ----------------------------------------------------------------- render --
 
 function render() {
@@ -590,10 +775,13 @@ function render() {
   $('panelName').value = panel.name;
   $('panelFamily').value = panel.family;
   $('panelLeaves').value = panel.leaves;
-  $('scaleReadout').hidden = !panel.scale;
-  if (panel.scale) {
-    $('scaleReadout').textContent = `${panel.scale.pixelsPerMetre.toFixed(0)} px/m`;
+  const record = imageOf(panel);
+  $('scaleReadout').hidden = !record.scale;
+  if (record.scale) {
+    $('scaleReadout').textContent = `${record.scale.pixelsPerMetre.toFixed(0)} px/m`;
   }
+  renderViewTabs();
+  renderAux();
   renderSteps();
   renderStep();
   renderResults();
@@ -629,25 +817,35 @@ $('zoomIn').addEventListener('click', () => view.zoomIn());
 $('zoomOut').addEventListener('click', () => view.zoomOut());
 $('zoomFit').addEventListener('click', () => view.fit());
 
-for (const id of ['photoFile', 'photoCamera']) {
-  $(id).addEventListener('change', async (event) => {
+/** A photograph belongs to one view, and replaces whatever that view held. */
+async function loadPhotoInto(viewId, file) {
+  try {
+    const photo = await downscale(file);
+    const panel = panelOf();
+    const record = imageOf(panel, viewId);
+    record.photo = photo;
+    record.scale = null;
+    record.marks = [];
+    panel.view = viewId;
+    await view.show(record);
+    render();
+    save();
+    setHint('Now set the scale: pick Scale and click the two ends of something you know.');
+  } catch (err) {
+    setHint(`That image could not be read (${err.message}).`);
+  }
+}
+
+for (const [id, viewId] of [
+  ['photoFile', null],
+  ['photoCamera', null],
+  ['sectionFile', 'section'],
+  ['blockFile', 'block'],
+]) {
+  $(id).addEventListener('change', (event) => {
     const file = event.target.files?.[0];
     event.target.value = '';
-    if (!file) return;
-    try {
-      const photo = await downscale(file);
-      const panel = panelOf();
-      panel.photo = photo;
-      panel.scale = null;
-      panel.marks = [];
-      await view.setImage(photo.src);
-      view.setPanel(panel);
-      render();
-      save();
-      setHint('Now set the scale: pick Scale and click the two ends of something you know.');
-    } catch (err) {
-      setHint(`That image could not be read (${err.message}).`);
-    }
+    if (file) loadPhotoInto(viewId ?? panelOf().view, file);
   });
 }
 if ((navigator.maxTouchPoints ?? 0) > 0) $('cameraBtn').hidden = false;
@@ -715,8 +913,12 @@ $('step').addEventListener('click', (event) => {
   const drop = event.target.closest('[data-drop-mark]');
   if (drop) {
     const panel = panelOf();
-    panel.marks = panel.marks.filter((m) => m.id !== drop.dataset.dropMark);
-    view.setPanel(panel);
+    for (const id of VIEW_IDS) {
+      panel.images[id].marks = panel.images[id].marks.filter(
+        (m) => m.id !== drop.dataset.dropMark,
+      );
+    }
+    view.refresh(imageOf(panel));
     render();
     save();
     return;
@@ -836,8 +1038,7 @@ $('panelList').addEventListener('click', (event) => {
 
 async function switchPanel() {
   const panel = panelOf();
-  await view.setImage(panel.photo?.src ?? null);
-  view.setPanel(panel);
+  await view.show(imageOf(panel));
   step = 0;
   render();
   save();
@@ -879,105 +1080,241 @@ function download(name, text, type) {
 
 // --------------------------------------------------------------- report ---
 
-$('printReport').addEventListener('click', () => {
-  $('report').innerHTML = reportHTML();
-  $('report').hidden = false;
-  window.print();
-  window.setTimeout(() => {
-    $('report').hidden = true;
-  }, 500);
+$('printReport').addEventListener('click', async () => {
+  const button = $('printReport');
+  const was = button.textContent;
+  button.disabled = true;
+  button.textContent = 'Preparing...';
+  try {
+    $('report').innerHTML = await reportHTML();
+    $('report').hidden = false;
+    window.print();
+  } finally {
+    button.disabled = false;
+    button.textContent = was;
+    window.setTimeout(() => {
+      $('report').hidden = true;
+    }, 500);
+  }
 });
 
 /**
- * The printed sheet follows the data sheets of Figs. 12 to 14: the photograph,
- * what the wall is made of, the seven outcomes in a strip, and the analysis.
- * A reader who knows the paper recognises the page.
+ * Two sheets for each wall.
+ *
+ * The first follows the data sheets of Figs. 12 to 14: the photographs, what
+ * the wall is made of, the seven outcomes in a strip. The photographs carry
+ * the marks that were made on them, because a report that showed a bare
+ * picture would be asking its reader to take the outcomes on trust.
+ *
+ * The second is what the application shows on the screen -- the indices, the
+ * bars, the breakdown, the properties and the comparison with the code table
+ * -- on paper, because that is the part of a survey anyone else will want to
+ * argue with.
  */
-function reportHTML() {
-  const sheets = summariseProject(project)
-    .map((s) => {
-      const panel = s.panel;
-      const outcomes = `<div class="outcomes-strip">
-          ${ORDER.map((id) => `<div class="h">${id}</div>`).join('')}
-          ${ORDER.map((id) => {
-            const o = panel.assessment[id];
-            return `<div class="o-${o ?? 'none'}">${o ?? '?'}</div>`;
-          }).join('')}
-        </div>`;
+async function reportHTML() {
+  const summaries = summariseProject(project);
 
-      const analysis = `<table class="grid-table">
-        <thead><tr><th></th>${DIRECTIONS.map((d) => `<th>${esc(d.short)}</th>`).join('')}</tr></thead>
-        <tbody>
-          <tr><td>MQI</td>${DIRECTIONS.map((d) => {
-            const r = s.indices[d.id];
-            return `<td>${r.exact ? fmt(r.value, 2) : `${fmt(r.min, 1)}&ndash;${fmt(r.max, 1)}`}</td>`;
-          }).join('')}</tr>
-          <tr><td>Category</td>${DIRECTIONS.map(
-            (d) => `<td>${esc(s.indices[d.id].category.label)}</td>`,
-          ).join('')}</tr>
-        </tbody></table>
-        ${
-          s.properties
-            ? `<table class="grid-table"><tbody>
-                <tr><td>f&#8344; [MPa]</td><td>${fmt(s.properties.fm.min, 2)}&ndash;${fmt(
-                  s.properties.fm.max,
-                  2,
-                )}</td>
-                <td>&tau;&#8320; [MPa]</td><td>${fmt(s.properties.tau0.min, 3)}&ndash;${fmt(
-                  s.properties.tau0.max,
-                  3,
-                )}</td>
-                <td>E [MPa]</td><td>${fmt(s.properties.E.min, 0)}&ndash;${fmt(
-                  s.properties.E.max,
-                  0,
-                )}</td></tr></tbody></table>
-              ${s.properties.spread ? '<p class="help">Interval, not estimate: the survey is incomplete.</p>' : ''}`
-            : ''
-        }`;
+  // Annotating is asynchronous and building markup is not, so every
+  // photograph is drawn first and the sheets are assembled from the results.
+  const figures = new Map();
+  for (const s of summaries) {
+    for (const id of VIEW_IDS) {
+      const src = await annotate(s.panel.images[id], { maxWidth: 1200 });
+      if (src) figures.set(`${s.panel.id}:${id}`, src);
+    }
+  }
 
-      const notes = ORDER.filter((id) => panel.notes[id])
-        .map((id) => `<p><b>${id}</b> ${esc(panel.notes[id])}</p>`)
-        .join('');
-
-      return `<article class="sheet">
-        <div class="sheet-row"><div class="label">Photo</div><div class="body sheet-photo">
-          ${
-            panel.photo?.src
-              ? `<img src="${panel.photo.src}" alt="${esc(panel.name)}">`
-              : '<p class="help">No photograph.</p>'
-          }
-        </div></div>
-        <div class="sheet-row"><div class="label">Description</div><div class="body">
-          <h2>${esc(panel.name || 'Untitled panel')}</h2>
-          <p class="meta">${esc(project.name)}${project.site ? ` &middot; ${esc(project.site)}` : ''}
-            ${project.date ? ` &middot; ${esc(project.date)}` : ''}
-            ${project.surveyor ? ` &middot; ${esc(project.surveyor)}` : ''}</p>
-          <p>${esc(panel.description || '')}</p>
-          <p class="meta">${esc(FAMILIES.find((f) => f.id === panel.family)?.name ?? '')}
-            &middot; ${esc(LEAVES[panel.leaves] ?? panel.leaves)}
-            ${panel.scale ? `&middot; scaled at ${panel.scale.pixelsPerMetre.toFixed(0)} px/m` : ''}</p>
-          ${notes}
-        </div></div>
-        <div class="sheet-row"><div class="label">Analysis</div><div class="body">
-          ${outcomes}
-          ${analysis}
-        </div></div>
-      </article>`;
-    })
-    .join('');
-
+  const sheets = summaries.map((s) => dataSheet(s, figures) + resultSheet(s)).join('');
   return `<h2>${esc(project.name || 'Masonry quality survey')}</h2>
+    <p class="meta">${[project.site, project.date, project.surveyor]
+      .filter(Boolean)
+      .map(esc)
+      .join(' &middot; ')}</p>
     <p class="meta">Masonry Quality Index after Borri, Corradi, Castori and De Maria (2015).
       Computed with rapidMQI.</p>
     ${sheets}`;
 }
 
+function figureFor(panel, id, figures) {
+  const record = panel.images[id];
+  const v = VIEW[id];
+  const src = figures.get(`${panel.id}:${id}`);
+  if (src) {
+    const marks = record.marks.length;
+    return `<figure>
+      <img src="${src}" alt="${esc(v.name)}">
+      <figcaption><b>${esc(v.name)}.</b> Photograph${
+        record.scale ? `, scaled at ${record.scale.pixelsPerMetre.toFixed(0)} px/m` : ', unscaled'
+      }${marks ? `, with ${marks} measurement${marks > 1 ? 's' : ''} marked on it` : ''}.</figcaption>
+    </figure>`;
+  }
+  if (record.sketch) {
+    return `<figure>
+      ${sketchSVG(id, record.sketch)}
+      <figcaption><b>${esc(v.name)}.</b> ${esc(sketchCaption(id, record.sketch))}
+        <em>Drawn, not photographed.</em></figcaption>
+    </figure>`;
+  }
+  return `<figure><figcaption><b>${esc(v.name)}.</b> Not recorded.</figcaption></figure>`;
+}
+
+function dataSheet(s, figures) {
+  const panel = s.panel;
+  const outcomes = `<div class="outcomes-strip">
+      ${ORDER.map((id) => `<div class="h">${id}</div>`).join('')}
+      ${ORDER.map((id) => {
+        const o = panel.assessment[id];
+        return `<div class="o-${o ?? 'none'}">${o ?? '?'}</div>`;
+      }).join('')}
+    </div>`;
+
+  const analysis = `<table class="grid-table">
+    <thead><tr><th></th>${DIRECTIONS.map((d) => `<th>${esc(d.short)}</th>`).join('')}</tr></thead>
+    <tbody>
+      <tr><td>MQI</td>${DIRECTIONS.map((d) => {
+        const r = s.indices[d.id];
+        return `<td>${r.exact ? fmt(r.value, 2) : `${fmt(r.min, 1)}&ndash;${fmt(r.max, 1)}`}</td>`;
+      }).join('')}</tr>
+      <tr><td>Category</td>${DIRECTIONS.map(
+        (d) => `<td>${esc(s.indices[d.id].category.label)}</td>`,
+      ).join('')}</tr>
+    </tbody></table>
+    ${
+      s.properties
+        ? `<table class="grid-table"><tbody>
+            <tr><td>f&#8344; [MPa]</td><td>${fmt(s.properties.fm.min, 2)}&ndash;${fmt(
+              s.properties.fm.max,
+              2,
+            )}</td>
+            <td>&tau;&#8320; [MPa]</td><td>${fmt(s.properties.tau0.min, 3)}&ndash;${fmt(
+              s.properties.tau0.max,
+              3,
+            )}</td>
+            <td>E [MPa]</td><td>${fmt(s.properties.E.min, 0)}&ndash;${fmt(
+              s.properties.E.max,
+              0,
+            )}</td></tr></tbody></table>
+          ${
+            s.properties.spread
+              ? '<p class="help">Interval, not estimate: the survey is incomplete.</p>'
+              : ''
+          }`
+        : ''
+    }`;
+
+  const notes = ORDER.filter((id) => panel.notes[id])
+    .map((id) => `<p><b>${id}</b> ${esc(panel.notes[id])}</p>`)
+    .join('');
+
+  return `<article class="sheet">
+    <div class="sheet-row"><div class="label">Views</div><div class="body">
+      <div class="sheet-figures">
+        ${VIEW_IDS.map((id) => figureFor(panel, id, figures)).join('')}
+      </div>
+    </div></div>
+    <div class="sheet-row"><div class="label">Description</div><div class="body">
+      <h2>${esc(panel.name || 'Untitled panel')}</h2>
+      <p class="meta">${esc(project.name)}${project.site ? ` &middot; ${esc(project.site)}` : ''}
+        ${project.date ? ` &middot; ${esc(project.date)}` : ''}
+        ${project.surveyor ? ` &middot; ${esc(project.surveyor)}` : ''}</p>
+      <p>${esc(panel.description || '')}</p>
+      <p class="meta">${esc(FAMILIES.find((f) => f.id === panel.family)?.name ?? '')}
+        &middot; ${esc(LEAVES[panel.leaves] ?? panel.leaves)}</p>
+      ${notes}
+    </div></div>
+    <div class="sheet-row"><div class="label">Analysis</div><div class="body">
+      ${outcomes}
+      ${analysis}
+    </div></div>
+  </article>`;
+}
+
+function resultSheet(s) {
+  const mqiV = s.complete ? s.values.V : [s.indices.V.min, s.indices.V.max];
+  const shear = s.properties?.tau0From ?? project.tau0From ?? 'I';
+  const mqiShear = s.complete ? s.values[shear] : [s.indices[shear].min, s.indices[shear].max];
+
+  return `<article class="sheet">
+    <div class="sheet-row"><div class="label">Results</div><div class="body">
+      <h2>${esc(s.panel.name || 'Untitled panel')}</h2>
+      <div class="results-grid">
+        <div>
+          <h3>The index, and its category</h3>
+          ${resultHeads(s)}
+          <h3>Where the index comes from</h3>
+          ${breakdownTable(s)}
+        </div>
+        <div>
+          <h3>Mechanical properties</h3>
+          ${
+            s.properties
+              ? `${propertiesTable(s)}
+                <div class="charts">
+                  ${correlationChart('fm', { mqi: mqiV, label: 'fₘ [MPa]' })}
+                  ${correlationChart('tau0', { mqi: mqiShear, label: 'τ₀ [MPa]' })}
+                  ${correlationChart('E', { mqi: mqiV, label: 'E [MPa]' })}
+                </div>`
+              : '<p class="help">The survey has no index yet.</p>'
+          }
+          <h3>Against the code table</h3>
+          ${codeTable(s)}
+          ${normativeBlock(s)}
+        </div>
+      </div>
+    </div></div>
+  </article>`;
+}
+
+/** The reference values the estimate was checked against, and Table 9. */
+function normativeBlock(s) {
+  const ed = edition(project.edition);
+  const row = s.comparison?.row;
+  const applied = (row?.applied ?? [])
+    .map((id) => FACTORS.find((f) => f.id === id)?.name)
+    .filter(Boolean);
+
+  return `<h3>Reference values</h3>
+    <p class="code-note">${esc(ed.name)}${row ? `, "${esc(row.name)}"` : ''}.
+      ${applied.length ? `Table 11 factors applied: ${esc(applied.join(', '))}.` : ''}</p>
+    ${
+      row
+        ? `<table class="grid-table">
+            <thead><tr><th></th><th>min</th><th>max</th></tr></thead>
+            <tbody>
+              <tr><td>f&#8344; [MPa]</td><td>${fmt(row.fm[0], 2)}</td><td>${fmt(row.fm[1], 2)}</td></tr>
+              <tr><td>&tau;&#8320; [MPa]</td><td>${fmt(row.tau0[0], 3)}</td><td>${fmt(
+                row.tau0[1],
+                3,
+              )}</td></tr>
+              <tr><td>E [MPa]</td><td>${fmt(row.E[0], 0)}</td><td>${fmt(row.E[1], 0)}</td></tr>
+              <tr><td>G [MPa]</td><td>${fmt(row.G[0], 0)}</td><td>${fmt(row.G[1], 0)}</td></tr>
+              <tr><td>w [kN/m&sup3;]</td><td>${fmt(row.w, 0)}</td><td></td></tr>
+            </tbody></table>`
+        : '<p class="code-note">No typology was declared for this panel.</p>'
+    }
+    <h3>Classification, Table 9</h3>
+    <table class="grid-table">
+      <thead><tr><th>Actions</th><th>C</th><th>B</th><th>A</th></tr></thead>
+      <tbody>${DIRECTIONS.map((d) => {
+        const [low, high] = CATEGORIES[d.id].bounds;
+        const here = s.indices[d.id].category;
+        const cell = (label, text) =>
+          `<td>${here.certain && here.low === label ? `<b>${text}</b>` : text}</td>`;
+        return `<tr><td>${esc(d.short)}</td>${cell('C', `0 to ${low}`)}${cell(
+          'B',
+          `${low} to ${high}`,
+        )}${cell('A', `${high} to 10`)}</tr>`;
+      }).join('')}</tbody>
+    </table>
+    <p class="code-note">The printed table of the paper carries these labels in the order A, B, C
+      above ranges running the other way; they are used here as the text and the worked examples
+      of the paper mean them, C lowest and A highest.</p>`;
+}
+
 // ------------------------------------------------------------------ start --
 
 (async function start() {
-  const panel = panelOf();
-  if (panel.photo?.src) await view.setImage(panel.photo.src);
-  view.setPanel(panel);
+  await view.show(imageOf(panelOf()));
   setTool('pan');
   render();
   save();

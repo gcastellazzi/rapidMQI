@@ -47,7 +47,7 @@ const exp = (a, b) => (mqi) => a * Math.exp(b * mqi);
 export const CURVES = {
   fm: {
     id: 'fm',
-    symbol: 'f_m',
+    symbol: 'fₘ',
     name: 'Compressive strength',
     unit: 'MPa',
     min: exp(0.937, 0.2232),
@@ -57,7 +57,7 @@ export const CURVES = {
   },
   tau0: {
     id: 'tau0',
-    symbol: 'tau_0',
+    symbol: 'τ₀',
     name: 'Shear strength',
     unit: 'MPa',
     // Fig. 10b is plotted in units of 10^-2 MPa; the curves are brought to MPa

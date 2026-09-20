@@ -7,9 +7,18 @@
  * happens to be on the screen, which is what lets a survey be reopened on
  * another device and still have its marks in the right place.
  *
+ * It works on one IMAGE RECORD at a time -- a photograph, its scale, and the
+ * marks measured on it -- because a panel has three of them: the face, a
+ * section through the thickness, and a typical block. Each is photographed
+ * from a different distance, so each carries its own scale.
+ *
  * The tools are all the same tool: collect points until enough have been
  * collected, then hand them back. What differs is how many are enough and what
  * the caller does with them.
+ *
+ * The same ink serves the screen and the report, so an annotated photograph on
+ * a printed data sheet is the one from the screen and not an approximation of
+ * it.
  */
 
 const TOOLS = {
@@ -33,11 +42,152 @@ const COLOURS = {
   note: '#46615e',
 };
 
+const FONT = (size) => `${size}px Arial, Helvetica, sans-serif`;
+
+// -------------------------------------------------------------- shared ink --
+
+function strokePolyline(ctx, screen, colour, { dashed = false, width = 2, ends = true } = {}) {
+  if (screen.length === 0) return;
+  ctx.save();
+  ctx.strokeStyle = colour;
+  ctx.lineWidth = width;
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  if (dashed) ctx.setLineDash([width * 3, width * 2.5]);
+  ctx.beginPath();
+  ctx.moveTo(screen[0].x, screen[0].y);
+  for (const p of screen.slice(1)) ctx.lineTo(p.x, p.y);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  if (ends) {
+    for (const p of screen) {
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, width * 2, 0, Math.PI * 2);
+      ctx.fillStyle = '#ffffff';
+      ctx.fill();
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+}
+
+function strokeLabel(ctx, at, text, colour, k = 1) {
+  if (!text) return;
+  ctx.save();
+  ctx.font = FONT(12 * k);
+  const width = ctx.measureText(text).width + 10 * k;
+  const height = 18 * k;
+  const x = at.x + 8 * k;
+  const y = at.y - height - 2 * k;
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.92)';
+  ctx.strokeStyle = colour;
+  ctx.lineWidth = Math.max(1, k);
+  ctx.beginPath();
+  ctx.rect(x, y, width, height);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = '#213b3e';
+  ctx.fillText(text, x + 5 * k, y + height - 5 * k);
+  ctx.restore();
+}
+
+/**
+ * The scale reference and every mark of one image record, in whatever
+ * coordinates `toScreen` maps image pixels to. `k` scales the ink: 1 on
+ * screen, larger when the drawing is made at the full resolution of the
+ * photograph for a report.
+ */
+export function paintMarks(ctx, record, toScreen, k = 1) {
+  if (!record) return;
+  if (record.scale?.reference) {
+    const { a, b, length } = record.scale.reference;
+    strokePolyline(ctx, [a, b].map(toScreen), COLOURS.scale, { dashed: true, width: 2 * k });
+    strokeLabel(ctx, toScreen(b), `${length} m`, COLOURS.scale, k);
+  }
+  for (const mark of record.marks ?? []) {
+    const colour = COLOURS[mark.parameter] ?? COLOURS.note;
+    if (mark.kind === 'mark' || mark.points.length === 1) {
+      const p = toScreen(mark.points[0]);
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 7 * k, 0, Math.PI * 2);
+      ctx.fillStyle = colour;
+      ctx.globalAlpha = 0.85;
+      ctx.fill();
+      ctx.restore();
+    } else {
+      strokePolyline(ctx, mark.points.map(toScreen), colour, { width: 2 * k });
+    }
+    strokeLabel(ctx, toScreen(mark.points[mark.points.length - 1]), mark.label, colour, k);
+  }
+}
+
+/** A chequered bar one metre long, when the photograph has a scale. */
+function paintScaleBar(ctx, record, { w, h, zoom, k = 1 }) {
+  const perMetre = record?.scale?.pixelsPerMetre;
+  if (!perMetre) return;
+  const onScreen = perMetre * zoom;
+  if (!(onScreen > 20 * k) || onScreen > w * 0.8) return;
+  const x = 16 * k;
+  const y = h - 26 * k;
+  const height = 7 * k;
+  const segments = 4;
+  ctx.save();
+  for (let i = 0; i < segments; i += 1) {
+    ctx.fillStyle = i % 2 ? '#ffffff' : '#213b3e';
+    ctx.fillRect(x + (onScreen * i) / segments, y, onScreen / segments, height);
+  }
+  ctx.strokeStyle = '#213b3e';
+  ctx.lineWidth = Math.max(1, k);
+  ctx.strokeRect(x, y, onScreen, height);
+  ctx.fillStyle = '#213b3e';
+  ctx.font = FONT(11 * k);
+  ctx.fillText('1 m', x + onScreen + 6 * k, y + height + k);
+  ctx.restore();
+}
+
+/**
+ * The photograph with its marks on it, as a data URL, at its own resolution.
+ *
+ * This is what goes on the printed data sheet: a reader of the report can see
+ * the path that was traced for M_l and the blocks that were measured, rather
+ * than being asked to take the outcome on trust.
+ */
+export function annotate(record, { maxWidth = 1400, quality = 0.88 } = {}) {
+  const src = record?.photo?.src;
+  if (!src) return Promise.resolve(null);
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const k = Math.min(1, maxWidth / img.naturalWidth);
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(img.naturalWidth * k);
+      canvas.height = Math.round(img.naturalHeight * k);
+      const ctx = canvas.getContext('2d');
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      // The ink is sized against the drawing, not against the original: a mark
+      // two pixels wide on a four-thousand-pixel photograph is invisible once
+      // the page is printed. The divisor is small on purpose -- these figures
+      // end up four or five centimetres wide on a sheet of A4, and a label
+      // that looks right on the screen is unreadable there.
+      const ink = Math.max(1, canvas.width / 450);
+      paintMarks(ctx, record, (p) => ({ x: p.x * k, y: p.y * k }), ink);
+      paintScaleBar(ctx, record, { w: canvas.width, h: canvas.height, zoom: k, k: ink });
+      resolve(canvas.toDataURL('image/jpeg', quality));
+    };
+    img.onerror = () => resolve(null);
+    img.src = src;
+  });
+}
+
+// ---------------------------------------------------------------- the view --
+
 export function createPhotoView(canvas, { onPoints, onHint, onDraft } = {}) {
   const ctx = canvas.getContext('2d');
   const view = { scale: 1, tx: 0, ty: 0 };
   let image = null; // HTMLImageElement
-  let panel = null; // the survey panel, for its marks and its scale
+  let record = null; // { photo, scale, marks } -- the one being worked on
   let tool = 'pan';
   let draft = [];
   let hover = null;
@@ -84,12 +234,20 @@ export function createPhotoView(canvas, { onPoints, onHint, onDraft } = {}) {
     draw();
   }
 
-  function setImage(src) {
+  /** Show an image record: its photograph, its scale and its marks. */
+  function show(next) {
+    record = next ?? null;
     draft = [];
+    onDraft?.(0, tool);
+    const src = record?.photo?.src ?? null;
     if (!src) {
       image = null;
       draw();
       return Promise.resolve(null);
+    }
+    if (image && image.src === src) {
+      fit();
+      return Promise.resolve(image);
     }
     return new Promise((resolve, reject) => {
       const img = new Image();
@@ -103,8 +261,9 @@ export function createPhotoView(canvas, { onPoints, onHint, onDraft } = {}) {
     });
   }
 
-  function setPanel(next) {
-    panel = next;
+  /** The same record, changed: redraw without reloading the bitmap. */
+  function refresh(next) {
+    if (next) record = next;
     draw();
   }
 
@@ -162,6 +321,7 @@ export function createPhotoView(canvas, { onPoints, onHint, onDraft } = {}) {
       const [a, b] = [...pointers.values()];
       pinch = { distance: Math.hypot(a.at.x - b.at.x, a.at.y - b.at.y) };
       draft = [];
+      onDraft?.(0, tool);
     }
   });
 
@@ -207,11 +367,15 @@ export function createPhotoView(canvas, { onPoints, onHint, onDraft } = {}) {
   canvas.addEventListener('pointerup', endPointer);
   canvas.addEventListener('pointercancel', (event) => pointers.delete(event.pointerId));
 
-  canvas.addEventListener('wheel', (event) => {
-    if (!image) return;
-    event.preventDefault();
-    zoomAbout(Math.exp(-event.deltaY * 0.0015), canvasPoint(event));
-  }, { passive: false });
+  canvas.addEventListener(
+    'wheel',
+    (event) => {
+      if (!image) return;
+      event.preventDefault();
+      zoomAbout(Math.exp(-event.deltaY * 0.0015), canvasPoint(event));
+    },
+    { passive: false },
+  );
 
   canvas.addEventListener('dblclick', (event) => {
     event.preventDefault();
@@ -239,72 +403,13 @@ export function createPhotoView(canvas, { onPoints, onHint, onDraft } = {}) {
 
   // ----------------------------------------------------------------- draw --
 
-  function drawPolyline(points, colour, { dashed = false, width = 2, ends = true } = {}) {
-    if (points.length === 0) return;
-    const screen = points.map(toScreen);
+  function drawEmpty(w, h) {
     ctx.save();
-    ctx.strokeStyle = colour;
-    ctx.lineWidth = width;
-    ctx.lineJoin = 'round';
-    ctx.lineCap = 'round';
-    if (dashed) ctx.setLineDash([6, 5]);
-    ctx.beginPath();
-    ctx.moveTo(screen[0].x, screen[0].y);
-    for (const p of screen.slice(1)) ctx.lineTo(p.x, p.y);
-    ctx.stroke();
-    ctx.setLineDash([]);
-    if (ends) {
-      for (const p of screen) {
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
-        ctx.fillStyle = '#ffffff';
-        ctx.fill();
-        ctx.lineWidth = 2;
-        ctx.stroke();
-      }
-    }
-    ctx.restore();
-  }
-
-  function drawLabel(at, text, colour) {
-    if (!text) return;
-    ctx.save();
-    ctx.font = '12px Arial, Helvetica, sans-serif';
-    const width = ctx.measureText(text).width + 10;
-    const x = at.x + 8;
-    const y = at.y - 20;
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.92)';
-    ctx.strokeStyle = colour;
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.rect(x, y, width, 18);
-    ctx.fill();
-    ctx.stroke();
-    ctx.fillStyle = '#213b3e';
-    ctx.fillText(text, x + 5, y + 13);
-    ctx.restore();
-  }
-
-  /** A chequered bar one metre long, when the photograph has a scale. */
-  function drawScaleBar(w, h) {
-    const perMetre = panel?.scale?.pixelsPerMetre;
-    if (!perMetre) return;
-    const onScreen = perMetre * view.scale;
-    if (!(onScreen > 20) || onScreen > w * 0.8) return;
-    const x = 16;
-    const y = h - 26;
-    const segments = 4;
-    ctx.save();
-    for (let i = 0; i < segments; i += 1) {
-      ctx.fillStyle = i % 2 ? '#ffffff' : '#213b3e';
-      ctx.fillRect(x + (onScreen * i) / segments, y, onScreen / segments, 7);
-    }
-    ctx.strokeStyle = '#213b3e';
-    ctx.lineWidth = 1;
-    ctx.strokeRect(x, y, onScreen, 7);
-    ctx.fillStyle = '#213b3e';
-    ctx.font = '11px Arial, Helvetica, sans-serif';
-    ctx.fillText('1 m', x + onScreen + 6, y + 8);
+    ctx.fillStyle = '#68807e';
+    ctx.font = FONT(13);
+    ctx.textAlign = 'center';
+    ctx.fillText('No photograph in this view.', w / 2, h / 2 - 8);
+    ctx.fillText('Load one, or take one, to begin.', w / 2, h / 2 + 12);
     ctx.restore();
   }
 
@@ -312,13 +417,7 @@ export function createPhotoView(canvas, { onPoints, onHint, onDraft } = {}) {
     const { w, h } = size();
     ctx.clearRect(0, 0, w, h);
     if (!image) {
-      ctx.save();
-      ctx.fillStyle = '#68807e';
-      ctx.font = '13px Arial, Helvetica, sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText('No photograph yet.', w / 2, h / 2 - 8);
-      ctx.fillText('Load one, or take one, to begin the survey.', w / 2, h / 2 + 12);
-      ctx.restore();
+      drawEmpty(w, h);
       return;
     }
 
@@ -334,47 +433,31 @@ export function createPhotoView(canvas, { onPoints, onHint, onDraft } = {}) {
     );
     ctx.restore();
 
-    if (panel?.scale?.reference) {
-      const { a, b } = panel.scale.reference;
-      drawPolyline([a, b], COLOURS.scale, { dashed: true });
-      drawLabel(toScreen(b), `${panel.scale.reference.length} m`, COLOURS.scale);
-    }
-
-    for (const mark of panel?.marks ?? []) {
-      const colour = COLOURS[mark.parameter] ?? COLOURS.note;
-      if (mark.kind === 'mark' || mark.points.length === 1) {
-        const p = toScreen(mark.points[0]);
-        ctx.save();
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, 7, 0, Math.PI * 2);
-        ctx.fillStyle = colour;
-        ctx.globalAlpha = 0.85;
-        ctx.fill();
-        ctx.restore();
-      } else {
-        drawPolyline(mark.points, colour, { dashed: mark.kind === 'chord' });
-      }
-      drawLabel(toScreen(mark.points[mark.points.length - 1]), mark.label, colour);
-    }
+    paintMarks(ctx, record, toScreen, 1);
 
     if (draft.length > 0) {
       const live = hover && TOOLS[tool].points > draft.length ? [...draft, hover] : draft;
-      drawPolyline(live, COLOURS.draft, { dashed: true });
+      strokePolyline(ctx, live.map(toScreen), COLOURS.draft, { dashed: true });
     }
 
-    drawScaleBar(w, h);
+    paintScaleBar(ctx, record, { w, h, zoom: view.scale });
+  }
+
+  function centreOf() {
+    const rect = canvas.getBoundingClientRect();
+    return { x: rect.width / 2, y: rect.height / 2 };
   }
 
   return {
-    setImage,
-    setPanel,
+    show,
+    refresh,
     setTool,
     fit,
     draw,
-    zoomIn: () => zoomAbout(1.25, centreOf()),
-    zoomOut: () => zoomAbout(0.8, centreOf()),
     finish: finishDraft,
     undoPoint,
+    zoomIn: () => zoomAbout(1.25, centreOf()),
+    zoomOut: () => zoomAbout(0.8, centreOf()),
     cancel: () => {
       draft = [];
       onDraft?.(0, tool);
@@ -388,9 +471,4 @@ export function createPhotoView(canvas, { onPoints, onHint, onDraft } = {}) {
     },
     destroy: () => observer.disconnect(),
   };
-
-  function centreOf() {
-    const rect = canvas.getBoundingClientRect();
-    return { x: rect.width / 2, y: rect.height / 2 };
-  }
 }

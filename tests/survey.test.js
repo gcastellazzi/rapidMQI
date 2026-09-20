@@ -6,11 +6,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  VIEW_IDS,
   addPanel,
   activePanel,
   duplicatePanel,
+  imageOf,
   makePanel,
   makeProject,
+  marksOf,
   progressOf,
   removePanel,
   summarise,
@@ -37,10 +40,17 @@ test('panels are added, duplicated and removed, and one always remains', () => {
   assert.equal(project.activePanelId, second.id);
 
   second.assessment = { ...FIG12 };
-  second.photo = { src: 'data:image/png;base64,AAAA', width: 100, height: 80, name: 'wall.png' };
+  imageOf(second, 'face').photo = {
+    src: 'data:image/png;base64,AAAA',
+    width: 100,
+    height: 80,
+    name: 'wall.png',
+  };
+  imageOf(second, 'section').sketch = 'PF';
   const copy = duplicatePanel(project, second.id);
   assert.deepEqual(copy.assessment, FIG12, 'the outcomes are worth copying');
-  assert.equal(copy.photo, null, 'the photograph is not: another wall needs its own');
+  assert.equal(imageOf(copy, 'face').photo, null, 'the photograph is not: this wall needs its own');
+  assert.equal(imageOf(copy, 'section').sketch, 'PF', 'but a drawing of the construction is');
   assert.notEqual(copy.id, second.id);
 
   assert.equal(removePanel(project, copy.id), true);
@@ -106,28 +116,96 @@ test('a survey survives the round trip to a file', () => {
   panel.assessment = { ...FIG12 };
   panel.family = 'brick';
   panel.notes = { WC: 'Section exposed at the breach' };
-  panel.scale = { pixelsPerMetre: 512, reference: { a: { x: 0, y: 0 }, b: { x: 512, y: 0 }, length: 1 } };
-  panel.marks = [{ id: 'm1', parameter: 'VJ', kind: 'path', label: '', points: [{ x: 1, y: 2 }, { x: 3, y: 4 }] }];
-  panel.photo = { src: 'data:image/png;base64,AAAA', width: 640, height: 480, name: 'north.png' };
+  const face = imageOf(panel, 'face');
+  face.scale = {
+    pixelsPerMetre: 512,
+    reference: { a: { x: 0, y: 0 }, b: { x: 512, y: 0 }, length: 1 },
+  };
+  face.marks = [
+    { id: 'm1', parameter: 'VJ', kind: 'path', label: '', points: [{ x: 1, y: 2 }, { x: 3, y: 4 }] },
+  ];
+  face.photo = { src: 'data:image/png;base64,AAAA', width: 640, height: 480, name: 'north.png' };
+  const section = imageOf(panel, 'section');
+  section.scale = { pixelsPerMetre: 900, reference: null };
+  imageOf(panel, 'block').sketch = 'F';
 
   const back = parse(toJSON(project));
+  const backFace = imageOf(back.panels[0], 'face');
   assert.equal(back.name, 'Palazzo');
   assert.equal(back.panels[0].name, 'North façade');
   assert.deepEqual(back.panels[0].assessment, panel.assessment);
-  assert.equal(back.panels[0].photo.src, panel.photo.src);
-  assert.equal(back.panels[0].scale.pixelsPerMetre, 512);
-  assert.deepEqual(back.panels[0].marks[0].points, panel.marks[0].points);
+  assert.equal(backFace.photo.src, face.photo.src);
+  assert.equal(backFace.scale.pixelsPerMetre, 512);
+  assert.deepEqual(backFace.marks[0].points, face.marks[0].points);
+  assert.equal(imageOf(back.panels[0], 'section').scale.pixelsPerMetre, 900);
+  assert.equal(imageOf(back.panels[0], 'block').sketch, 'F');
   assert.equal(back.activePanelId, project.activePanelId);
   assert.deepEqual(summarise(back.panels[0], back).values, { V: 8.5, I: 9, O: 9.5 });
 });
 
 test('a survey can be written without its photographs, and still opens', () => {
   const project = makeProject();
-  activePanel(project).photo = { src: 'data:image/png;base64,AAAA', width: 10, height: 10, name: 'x' };
+  imageOf(activePanel(project), 'face').photo = {
+    src: 'data:image/png;base64,AAAA',
+    width: 10,
+    height: 10,
+    name: 'x',
+  };
   const light = parse(toJSON(project, { withPhotos: false }));
-  assert.equal(light.panels[0].photo.src, null);
-  assert.equal(light.panels[0].photo.omitted, true);
-  assert.equal(light.panels[0].photo.width, 10, 'the size is kept, so marks still make sense');
+  const face = imageOf(light.panels[0], 'face');
+  assert.equal(face.photo.src, null);
+  assert.equal(face.photo.omitted, true);
+  assert.equal(face.photo.width, 10, 'the size is kept, so marks still make sense');
+});
+
+test('a survey written by the one-photograph version still opens', () => {
+  // Schema 1 kept one photograph per panel; its single view was the face.
+  const old = JSON.stringify({
+    app: 'rapidMQI',
+    schema: 1,
+    panels: [
+      {
+        name: 'Old wall',
+        assessment: FIG12,
+        photo: { src: 'data:image/png;base64,AAAA', width: 800, height: 600, name: 'old.jpg' },
+        scale: { pixelsPerMetre: 400 },
+        marks: [
+          { id: 'm1', parameter: 'VJ', kind: 'path', points: [{ x: 0, y: 0 }, { x: 4, y: 3 }] },
+        ],
+      },
+    ],
+  });
+  const project = parse(old);
+  const panel = project.panels[0];
+  assert.equal(imageOf(panel, 'face').photo.width, 800);
+  assert.equal(imageOf(panel, 'face').scale.pixelsPerMetre, 400);
+  assert.equal(imageOf(panel, 'face').marks.length, 1);
+  assert.equal(imageOf(panel, 'section').photo, null, 'the views it never had are empty');
+  assert.equal(panel.view, 'face');
+  assert.deepEqual(summarise(panel, project).values, { V: 8.5, I: 9, O: 9.5 });
+});
+
+test('every mark is found, whichever photograph it was drawn on', () => {
+  const project = makeProject();
+  const panel = activePanel(project);
+  imageOf(panel, 'face').scale = { pixelsPerMetre: 100 };
+  imageOf(panel, 'face').marks = [
+    { id: 'a', parameter: 'VJ', kind: 'path', points: [{ x: 0, y: 0 }, { x: 1, y: 1 }] },
+    { id: 'b', parameter: 'SD', kind: 'ruler', points: [{ x: 0, y: 0 }, { x: 50, y: 0 }] },
+  ];
+  imageOf(panel, 'section').scale = { pixelsPerMetre: 200 };
+  imageOf(panel, 'section').marks = [
+    { id: 'c', parameter: 'WC', kind: 'path', points: [{ x: 0, y: 0 }, { x: 2, y: 2 }] },
+  ];
+
+  assert.equal(marksOf(panel).length, 3);
+  assert.equal(marksOf(panel, 'path').length, 2);
+  assert.deepEqual(
+    marksOf(panel, 'path', 'WC').map((m) => [m.id, m.view, m.scale.pixelsPerMetre]),
+    [['c', 'section', 200]],
+    'a mark carries the view it belongs to, and that view has its own scale',
+  );
+  assert.equal(marksOf(panel, 'ruler')[0].scale.pixelsPerMetre, 100);
 });
 
 test('a file that is not a survey is refused, and says why', () => {
@@ -200,7 +278,11 @@ test('block dimensions are judged by the median, as Table 2 asks', () => {
 
 test('a panel made from nothing is still a panel', () => {
   const panel = makePanel();
-  assert.equal(panel.marks.length, 0);
-  assert.equal(panel.photo, null);
+  for (const id of VIEW_IDS) {
+    assert.equal(imageOf(panel, id).marks.length, 0);
+    assert.equal(imageOf(panel, id).photo, null);
+    assert.equal(imageOf(panel, id).sketch, null);
+  }
+  assert.equal(panel.view, 'face');
   assert.equal(summarise(panel).complete, false);
 });
