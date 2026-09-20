@@ -27,11 +27,13 @@ import {
 } from './core/tables.js';
 import { outcomeFromMl } from './core/mqi.js';
 import {
+  DIMENSIONS,
   VIEWS,
   VIEW,
   VIEW_IDS,
   activePanel,
   addPanel,
+  dimensionsOf,
   duplicatePanel,
   imageOf,
   makeProject,
@@ -51,7 +53,14 @@ import {
   saveLocal,
   toJSON,
 } from './core/persist.js';
-import { blockStatistics, checkChord, measure, scaleFrom } from './core/measure.js';
+import {
+  blockStatistics,
+  checkChord,
+  headerHint,
+  measure,
+  scaleFrom,
+  thicknessHint,
+} from './core/measure.js';
 import { EDITIONS, FACTORS, edition, rowsOf } from './core/reference.js';
 import { annotate, createPhotoView } from './render/photo.js';
 import { SKETCHES, sketchCaption, sketchSVG } from './render/sketches.js';
@@ -154,7 +163,14 @@ function handlePoints(tool, points) {
     return;
   }
   if (tool === 'ruler') {
-    addMark(record, { parameter: 'SD', kind: 'ruler', points });
+    // A ruler drawn on a section is a quote of the wall itself -- its
+    // thickness, a header, the core -- and belongs to WC. Anywhere else it is
+    // a block being sampled for SD.
+    addMark(record, {
+      parameter: panel.view === 'section' ? 'WC' : 'SD',
+      kind: 'ruler',
+      points,
+    });
   } else if (tool === 'path') {
     // A path traced on a section is about the connection between the leaves; a
     // path traced on the face is about the vertical joints. Nothing about a
@@ -177,18 +193,28 @@ function handlePoints(tool, points) {
 }
 
 function addMark(record, { parameter, kind, points }) {
-  record.marks.push({ id: nextId('mark'), parameter, kind, points, label: '' });
+  record.marks.push({ id: nextId('mark'), parameter, kind, points, label: '', name: '' });
   labelMarks(record);
 }
 
-/** Labels are recomputed rather than stored: they are readings, not records. */
+/**
+ * Labels are recomputed rather than stored: they are readings, not records.
+ * A quote the surveyor has named reads as a quote on a drawing -- "t = 55 cm"
+ * -- and an unnamed one is just its value.
+ */
 function labelMarks(record) {
   for (const mark of record.marks) {
     const m = measure(mark.points, record.scale);
-    if (mark.kind === 'path') mark.label = m.ml != null ? `Mₗ ${m.ml.toFixed(2)}` : '';
-    else if (mark.kind === 'ruler') {
-      mark.label = m.pathMetres != null ? `${(m.pathMetres * 100).toFixed(0)} cm` : '';
-    } else mark.label = mark.parameter ?? '';
+    const name = mark.name?.trim();
+    if (mark.kind === 'path') {
+      mark.label = m.ml != null ? `Mₗ ${m.ml.toFixed(2)}` : '';
+      if (name) mark.label = mark.label ? `${name} ${mark.label}` : name;
+    } else if (mark.kind === 'ruler') {
+      const value = m.pathMetres != null ? `${(m.pathMetres * 100).toFixed(0)} cm` : '';
+      mark.label = name ? [name, value].filter(Boolean).join(' = ') : value;
+    } else {
+      mark.label = name || mark.parameter || '';
+    }
   }
 }
 
@@ -333,7 +359,7 @@ function mlBox(panel, p) {
         'there. If nothing is exposed, pick one of the three sections instead.</p>'
       : '';
 
-  return `<div class="tool-box">
+  return `${p.id === 'WC' ? dimensionBox(panel) : ''}<div class="tool-box">
     <h4>Minimum length M&#8348; &middot; ${esc(ML[p.quantitative].where)}</h4>
     <p class="help">Pick the <b>Path</b> tool and click along the mortar joints from one point to
       another about a metre away, then Finish. M&#8348; is that path divided by the straight
@@ -349,8 +375,57 @@ function mlBox(panel, p) {
   </div>`;
 }
 
+/**
+ * What the dimensions written beside the drawings say about the leaf
+ * connection, and the quotes measured on a section photograph.
+ *
+ * Table 4 decides WC qualitatively by comparing the thickness of the wall with
+ * the large dimension of the stones, and by counting headers. A surveyor who
+ * has written down both has answered most of the parameter, so it is said out
+ * loud -- as a reading of the table, never as an assignment.
+ */
+function dimensionBox(panel) {
+  const dims = dimensionsOf(panel);
+  const hints = [thicknessHint(dims.t, dims.l), headerHint(dims.headers)].filter(Boolean);
+  const quotes = marksOf(panel, 'ruler', 'WC');
+  if (hints.length === 0 && quotes.length === 0) {
+    return `<div class="tool-box">
+      <h4>Dimensions</h4>
+      <p class="help">Write the wall thickness under the section drawing and the size of a block
+        under the block drawing, and Table 4 can be read off the two of them. A quote measured on
+        a photograph of the section does the same: pick the <b>Ruler</b> tool there.</p>
+    </div>`;
+  }
+  const badge = { F: 'ok', PF: 'warn', NF: 'bad' };
+  return `<div class="tool-box">
+    <h4>Dimensions</h4>
+    ${hints
+      .map((h) => `<p class="status ${badge[h.outcome]}">${esc(h.text)}</p>`)
+      .join('')}
+    ${
+      quotes.length
+        ? `<ul class="measured-list">${quotes
+            .map((q) => {
+              const m = measure(q.points, q.scale);
+              return `<li><b>${
+                m.pathMetres != null ? `${(m.pathMetres * 100).toFixed(0)} cm` : '--'
+              }</b>
+                <input type="text" class="quote-name" data-name-mark="${q.id}"
+                  value="${esc(q.name ?? '')}" placeholder="name this quote" maxlength="24">
+                <button type="button" data-drop-mark="${q.id}" title="Remove">&times;</button>
+              </li>`;
+            })
+            .join('')}</ul>`
+        : ''
+    }
+    ${hints.length ? '<p class="help">A suggestion from the table, not an answer: the choice above is yours.</p>' : ''}
+  </div>`;
+}
+
 function blockBox(panel) {
-  const rulers = marksOf(panel, 'ruler');
+  // Only the rulers that sampled a block: a thickness quoted on a section is
+  // a dimension of the wall, and has no business in the median of Table 2.
+  const rulers = marksOf(panel, 'ruler', 'SD');
   const measured = rulers.map((mark) => ({ mark, m: measure(mark.points, mark.scale) }));
   const stats = blockStatistics(measured.map((r) => r.m.pathMetres));
   const anyScale = VIEW_IDS.some((id) => panel.images[id].scale);
@@ -370,7 +445,9 @@ function blockBox(panel) {
             .map(
               (r) => `<li><b>${
                 r.m.pathMetres != null ? `${(r.m.pathMetres * 100).toFixed(0)} cm` : '--'
-              }</b><span class="meta">${esc(VIEW[r.mark.view].short.toLowerCase())}</span>
+              }</b>
+              <input type="text" class="quote-name" data-name-mark="${r.mark.id}"
+                value="${esc(r.mark.name ?? '')}" placeholder="name" maxlength="24">
               <button type="button" data-drop-mark="${r.mark.id}" title="Remove">&times;</button></li>`,
             )
             .join('')}</ul>`
@@ -681,13 +758,18 @@ function renderAux() {
   }
 }
 
+/** Which of the two side views is showing its three options rather than one. */
+const choosing = { section: false, block: false };
+
 /**
- * Either the photograph, as a thumbnail that opens it for measuring, or the
- * three hypotheses. Choosing one of those is an assessment of the parameter
- * the view belongs to, and it is applied as one.
+ * Either the photograph as a thumbnail that opens it for measuring, or the
+ * three hypotheses, or -- once one has been picked -- that drawing alone, at a
+ * size where the dimensions written under it can be read on it.
  */
 function auxBody(panel, id) {
   const image = panel.images[id];
+  const dims = dimensionRow(panel, id);
+
   if (image.photo?.src) {
     const marks = image.marks.length;
     return `<button type="button" class="photo-thumb" data-open="${id}"
@@ -696,9 +778,19 @@ function auxBody(panel, id) {
       </button>
       <p class="meta">${
         image.scale ? `${image.scale.pixelsPerMetre.toFixed(0)} px/m` : 'no scale yet'
-      }${marks ? ` &middot; ${marks} mark${marks > 1 ? 's' : ''}` : ''}</p>`;
+      }${marks ? ` &middot; ${marks} mark${marks > 1 ? 's' : ''}` : ''}</p>
+      ${dims}`;
   }
+
   const chosen = SKETCHES[id].options.find((o) => o.outcome === image.sketch);
+  if (chosen && !choosing[id]) {
+    return `<div class="sketch-chosen">${sketchSVG(id, chosen.outcome, image.dimensions)}</div>
+      <p class="meta"><b class="o-${chosen.outcome}">${chosen.outcome}</b>
+        ${esc(chosen.title)}. Drawn, not photographed.
+        <button type="button" class="link" data-rechoose="${id}">Change</button></p>
+      ${dims}`;
+  }
+
   return `<div class="sketch-choice">${SKETCHES[id].options
     .map(
       (o) => `<button type="button" class="sketch-option ${
@@ -709,11 +801,35 @@ function auxBody(panel, id) {
       </button>`,
     )
     .join('')}</div>
-    <p class="meta">${
-      chosen
-        ? `<b>${esc(chosen.title)}.</b> Drawn, not photographed.`
-        : esc(VIEW[id].noPhoto)
-    }</p>`;
+    <p class="meta">${esc(VIEW[id].noPhoto)}</p>
+    ${dims}`;
+}
+
+/**
+ * The representative dimensions, written as the data sheets of the paper write
+ * them: a letter, a value that may be a range, a unit. They are quoted on the
+ * drawing as they are typed, and two of them together answer most of WC.
+ */
+function dimensionRow(panel, id) {
+  const values = panel.images[id].dimensions ?? {};
+  return `<div class="dims">${DIMENSIONS[id]
+    .map(
+      (f) => `<label class="dim" title="${esc(f.title)}">
+        <span>${esc(f.label)}</span>
+        <input type="text" inputmode="decimal" data-dim="${id}:${f.id}" maxlength="24"
+          value="${esc(values[f.id] ?? '')}" placeholder="${esc(f.placeholder)}">
+        <small>${esc(f.unit)}</small>
+      </label>`,
+    )
+    .join('')}</div>`;
+}
+
+/** Redraw the drawing alone, so that typing a dimension does not lose focus. */
+function refreshSketch(id) {
+  const body = $(`aux${id[0].toUpperCase()}${id.slice(1)}Body`);
+  const holder = body?.querySelector('.sketch-chosen');
+  const image = imageOf(panelOf(), id);
+  if (holder && image.sketch) holder.innerHTML = sketchSVG(id, image.sketch, image.dimensions);
 }
 
 async function setView(id) {
@@ -733,6 +849,7 @@ function chooseSketch(id, outcome) {
   const panel = panelOf();
   const image = panel.images[id];
   image.sketch = image.sketch === outcome ? null : outcome;
+  choosing[id] = !image.sketch;
   const parameter = VIEW[id].parameter;
   if (image.sketch && parameter) {
     panel.assessment[parameter] = image.sketch;
@@ -758,13 +875,39 @@ $('aux').addEventListener('click', (event) => {
     chooseSketch(sketch.dataset.sketch, sketch.dataset.outcome);
     return;
   }
+  const again = event.target.closest('[data-rechoose]');
+  if (again) {
+    choosing[again.dataset.rechoose] = true;
+    renderAux();
+    return;
+  }
   const clear = event.target.closest('[data-clear]');
   if (!clear) return;
   const panel = panelOf();
   const id = clear.dataset.clear;
-  panel.images[id] = { photo: null, scale: null, marks: [], sketch: null };
+  panel.images[id] = { photo: null, scale: null, marks: [], sketch: null, dimensions: {} };
+  choosing[id] = false;
   if (panel.view === id) view.show(panel.images[id]);
   render();
+  save();
+});
+
+/**
+ * A dimension is typed one character at a time, so nothing here may re-render
+ * the field being typed into: the model is updated, the drawing is redrawn on
+ * its own, and the step is rebuilt because the hints it shows may have changed.
+ */
+$('aux').addEventListener('input', (event) => {
+  const field = event.target.closest('[data-dim]');
+  if (!field) return;
+  const [id, key] = field.dataset.dim.split(':');
+  const image = imageOf(panelOf(), id);
+  const dimensions = { ...(image.dimensions ?? {}) };
+  if (field.value.trim()) dimensions[key] = field.value.trim();
+  else delete dimensions[key];
+  image.dimensions = dimensions;
+  refreshSketch(id);
+  renderStep();
   save();
 });
 
@@ -932,8 +1075,23 @@ $('step').addEventListener('click', (event) => {
 });
 
 $('step').addEventListener('input', (event) => {
-  if (event.target.id !== 'note') return;
-  panelOf().notes[current()] = event.target.value;
+  if (event.target.id === 'note') {
+    panelOf().notes[current()] = event.target.value;
+    save();
+    return;
+  }
+  const named = event.target.closest('[data-name-mark]');
+  if (!named) return;
+  // Renaming redraws the photograph and nothing else: re-rendering the step
+  // would take the field out from under the hand typing in it.
+  const panel = panelOf();
+  for (const id of VIEW_IDS) {
+    const mark = panel.images[id].marks.find((m) => m.id === named.dataset.nameMark);
+    if (!mark) continue;
+    mark.name = named.value;
+    labelMarks(panel.images[id]);
+  }
+  view.refresh(imageOf(panel));
   save();
 });
 
@@ -1150,7 +1308,7 @@ function figureFor(panel, id, figures) {
   }
   if (record.sketch) {
     return `<figure>
-      ${sketchSVG(id, record.sketch)}
+      ${sketchSVG(id, record.sketch, record.dimensions)}
       <figcaption><b>${esc(v.name)}.</b> ${esc(sketchCaption(id, record.sketch))}
         <em>Drawn, not photographed.</em></figcaption>
     </figure>`;
@@ -1206,6 +1364,18 @@ function dataSheet(s, figures) {
     .map((id) => `<p><b>${id}</b> ${esc(panel.notes[id])}</p>`)
     .join('');
 
+  // The geometry row of the paper's own data sheets: the sides of a typical
+  // block, the thickness of the wall, the headers that cross it.
+  const geometry = Object.entries(DIMENSIONS)
+    .map(([view, fields]) => {
+      const values = panel.images[view]?.dimensions ?? {};
+      const bits = fields
+        .filter((f) => values[f.id])
+        .map((f) => `${esc(f.label)} = ${esc(values[f.id])} ${esc(f.unit)}`);
+      return bits.length ? `<p><b>${esc(VIEW[view].name)}.</b> ${bits.join(', ')}</p>` : '';
+    })
+    .join('');
+
   return `<article class="sheet">
     <div class="sheet-row"><div class="label">Views</div><div class="body">
       <div class="sheet-figures">
@@ -1222,6 +1392,13 @@ function dataSheet(s, figures) {
         &middot; ${esc(LEAVES[panel.leaves] ?? panel.leaves)}</p>
       ${notes}
     </div></div>
+    ${
+      geometry
+        ? `<div class="sheet-row"><div class="label">Geometry</div><div class="body">
+            ${geometry}
+          </div></div>`
+        : ''
+    }
     <div class="sheet-row"><div class="label">Analysis</div><div class="body">
       ${outcomes}
       ${analysis}

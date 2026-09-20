@@ -235,6 +235,72 @@ svg.sketch {
   max-height: 100%;
 }
 
+/* The representative dimensions, under the drawing they belong to: a letter,
+   a value that may be a range, a unit -- the row the paper's data sheets put
+   under their block. */
+.dims {
+  display: flex;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+.dim {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex: 1 1 0;
+  min-width: 0;
+  margin: 0;
+  font-size: 11px;
+  color: var(--muted-foreground);
+}
+.dim > span {
+  font-style: italic;
+  color: var(--foreground-soft);
+}
+.dim input {
+  width: 100%;
+  min-width: 0;
+  padding: 3px 4px;
+  font-size: 11px;
+  text-align: center;
+}
+.dim small {
+  font-size: 9px;
+  white-space: nowrap;
+}
+
+.sketch-chosen {
+  flex: 0 1 auto;
+  min-height: 0;
+  display: flex;
+  justify-content: center;
+}
+.aux-body .sketch-chosen svg.sketch {
+  max-height: min(150px, 18vh);
+}
+
+/* A button that reads as a link, for the one word that changes a choice. */
+button.link {
+  display: inline;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--primary);
+  font-size: inherit;
+  text-decoration: underline;
+}
+button.link:hover {
+  background: none;
+  color: var(--primary-strong);
+}
+
+.quote-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 1px 4px;
+  font-size: 11px;
+}
+
 .viewtabs {
   display: inline-flex;
   gap: 2px;

@@ -122,3 +122,79 @@ export function blockStatistics(lengthsMetres) {
     suggested: median > 0.4 ? 'F' : median >= 0.2 ? 'PF' : 'NF',
   };
 }
+
+/**
+ * Representative dimensions.
+ *
+ * The data sheets of the paper carry a row of them -- "s = 10÷13 cm, h = 5÷6
+ * cm, l = 24÷32 cm" for a brick -- and they are written the way a surveyor
+ * writes them, as a range rather than as a number, because a wall is not made
+ * of one block. So they are kept as the text that was typed and parsed only
+ * when something wants to reason with them.
+ *
+ * Accepts "30", "15÷30", "15-30", "15 – 30", "15,5" and "15.5".
+ */
+export function parseDimension(text) {
+  if (typeof text === 'number') return Number.isFinite(text) ? { min: text, max: text, text: String(text) } : null;
+  if (typeof text !== 'string') return null;
+  const cleaned = text.trim().replace(/,/g, '.');
+  if (!cleaned) return null;
+  const numbers = cleaned.match(/\d+(?:\.\d+)?/g);
+  if (!numbers || numbers.length === 0) return null;
+  const values = numbers.map(Number).filter((v) => Number.isFinite(v) && v >= 0);
+  if (values.length === 0) return null;
+  return { min: Math.min(...values), max: Math.max(...values), text: text.trim() };
+}
+
+/** The middle of a dimension, which is what a comparison has to use. */
+export function midOf(text) {
+  const d = parseDimension(text);
+  return d ? (d.min + d.max) / 2 : null;
+}
+
+/**
+ * Table 4, the qualitative column, turned into a reading of two dimensions.
+ *
+ * The table says "wall thickness similar to the large dimension of the stones"
+ * for F, "wall thickness larger than" for PF and "stones small compared with
+ * the wall thickness" for NF, and it gives no numbers for similar, larger or
+ * small. The thresholds below are therefore an INTERPRETATION and not the
+ * paper: similar is read as within a quarter, and small as less than half.
+ * They are offered as a suggestion and never assigned.
+ */
+export const THICKNESS_BANDS = { similar: 1.25, small: 2 };
+
+export function thicknessHint(thicknessText, blockLengthText) {
+  const t = midOf(thicknessText);
+  const l = midOf(blockLengthText);
+  if (!(t > 0) || !(l > 0)) return null;
+  const ratio = t / l;
+  const say = (outcome, what) => ({
+    outcome,
+    ratio: Math.round(ratio * 100) / 100,
+    text:
+      `A wall ${t} cm thick against a largest block dimension of ${l} cm: the thickness is ` +
+      `${what}. Table 4 reads that as ${outcome}, on the qualitative column.`,
+  });
+  if (ratio <= THICKNESS_BANDS.similar) return say('F', 'similar to the block');
+  if (ratio <= THICKNESS_BANDS.small) return say('PF', 'larger than the block');
+  return say('NF', `${ratio.toFixed(1)} times the block, which makes the stones small`);
+}
+
+/**
+ * The header count of Section 4: fewer than 2 per square metre is NF, a
+ * limited number -- 2 to 5 -- is PF, and a systematic presence, above 4 to 5,
+ * is F. The two bands the paper gives overlap; the boundary is taken at 5.
+ */
+export function headerHint(perSquareMetre) {
+  const n = midOf(perSquareMetre);
+  if (n == null) return null;
+  const outcome = n < 2 ? 'NF' : n <= 5 ? 'PF' : 'F';
+  const what =
+    outcome === 'NF'
+      ? 'fewer than 2 per square metre, which is as good as none'
+      : outcome === 'PF'
+        ? 'a limited number, 2 to 5 per square metre'
+        : 'a systematic presence, above 5 per square metre';
+  return { outcome, count: n, text: `${n} headers per square metre: ${what}. Table 4 reads that as ${outcome}.` };
+}

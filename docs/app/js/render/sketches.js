@@ -25,6 +25,42 @@ const CORE = 'var(--border)';
 const svg = (viewBox, body, label) =>
   `<svg viewBox="${viewBox}" class="sketch" role="img" aria-label="${label}">${body}</svg>`;
 
+// ------------------------------------------------------------------ quotes --
+
+/**
+ * A dimension line, drawn the way a drawing board draws one: a line between
+ * two ticks with the value sitting on it. The value is whatever the surveyor
+ * typed -- "24÷32" as readily as "30" -- because a wall is not made of one
+ * block and a range is the honest answer.
+ */
+const QUOTE = 'var(--muted-foreground)';
+
+function quote(x1, y1, x2, y2, text, { dx = 0, dy = -3.5, rotate = 0, size = 7.5 } = {}) {
+  if (!text) return '';
+  const ax = x2 - x1;
+  const ay = y2 - y1;
+  const len = Math.hypot(ax, ay) || 1;
+  // The ticks are short strokes across the line, so that the quote reads as a
+  // dimension and not as an edge of the thing being measured.
+  const tx = (-ay / len) * 3;
+  const ty = (ax / len) * 3;
+  const mx = (x1 + x2) / 2 + dx;
+  const my = (y1 + y2) / 2 + dy;
+  const turn = rotate ? ` transform="rotate(${rotate} ${mx} ${my})"` : '';
+  return `<g class="quote">
+    <line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${QUOTE}" stroke-width="0.7"/>
+    <line x1="${x1 - tx}" y1="${y1 - ty}" x2="${x1 + tx}" y2="${y1 + ty}" stroke="${QUOTE}" stroke-width="0.7"/>
+    <line x1="${x2 - tx}" y1="${y2 - ty}" x2="${x2 + tx}" y2="${y2 + ty}" stroke="${QUOTE}" stroke-width="0.7"/>
+    <text x="${mx}" y="${my}" text-anchor="middle" font-size="${size}" fill="${QUOTE}"
+      font-family="Arial, Helvetica, sans-serif"${turn}>${esc(text)}</text>
+  </g>`;
+}
+
+const esc = (v) =>
+  String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]);
+
+const has = (d, id) => typeof d?.[id] === 'string' && d[id].trim().length > 0;
+
 // ------------------------------------------------------------- the section --
 
 /**
@@ -134,13 +170,13 @@ const CUT = boxBody([]);
  * at, which is a thumbnail in a corner of the screen.
  */
 const ROUGH = boxBody([
-  [-3, 6],
-  [6, -3],
-  [-5, 5],
-  [4, -6],
-  [-6, 4],
-  [7, 2],
-  [3, 6],
+  [-2, 3],
+  [3, -2],
+  [-3, 3],
+  [2, -3],
+  [-3, 2],
+  [4, 1],
+  [2, 3],
 ]);
 
 /**
@@ -205,14 +241,45 @@ export const SKETCHES = {
 
 const BLOCK_BODY = { NF: PEBBLE, PF: ROUGH, F: CUT };
 
-/** The drawing for one view and one outcome, as inline SVG. */
-export function sketchSVG(view, outcome) {
+/**
+ * The drawing for one view and one outcome, as inline SVG, with the
+ * representative dimensions quoted on it when there are any.
+ *
+ * The drawing grows to make room for the quotes rather than squeezing them in:
+ * a thumbnail with no dimensions keeps the tight box it was designed in.
+ */
+export function sketchSVG(view, outcome, dimensions = null) {
   if (!outcome) return '';
   if (view === 'section') {
-    return svg(`0 0 ${W} ${H}`, sectionBody(outcome), `Wall section, ${outcome}`);
+    const t = has(dimensions, 't');
+    const base = TOP + ROWS * ROW_H;
+    const body = sectionBody(outcome) + (t ? quote(5, base + 9, W - 5, base + 9, `t = ${dimensions.t} cm`, { dy: 9 }) : '');
+    return svg(t ? `0 0 ${W} ${H + 22}` : `0 0 ${W} ${H}`, body, `Wall section, ${outcome}`);
   }
   if (view === 'block') {
-    return svg('0 0 120 78', BLOCK_BODY[outcome] ?? '', `Typical block, ${outcome}`);
+    const quotes = [
+      has(dimensions, 'l')
+        ? quote(BX, BY + 10, BX + BW, BY + 10, `l ${dimensions.l}`, { dy: 9 })
+        : '',
+      // Read bottom to top, the way a drawing board writes a height.
+      has(dimensions, 'h')
+        ? quote(BX - 8, BY, BX - 8, BY - BH, `h ${dimensions.h}`, { dx: -4, dy: 0, rotate: -90 })
+        : '',
+      has(dimensions, 's')
+        ? quote(BX + 5, BY - BH - 7, BX + DX + 5, BY - BH + DY - 7, `s ${dimensions.s}`, {
+            // The depth line is short and the label is not, so the label is
+            // pushed clear of it rather than sitting across its ticks.
+            dx: -15,
+            dy: -8,
+          })
+        : '',
+    ].join('');
+    const any = quotes.length > 0;
+    return svg(
+      any ? '-14 -20 148 100' : '0 0 120 78',
+      BLOCK_BODY[outcome] + quotes,
+      `Typical block, ${outcome}`,
+    );
   }
   return '';
 }

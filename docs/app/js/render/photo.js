@@ -92,6 +92,35 @@ function strokeLabel(ctx, at, text, colour, k = 1) {
 }
 
 /**
+ * A quote: a dimension line with a tick at each end and the value sitting on
+ * it, which is how a measurement is written on a drawing. The ruler draws
+ * these, so that a thickness measured on a photograph of a section reads as a
+ * dimension rather than as a stray line.
+ */
+function strokeDimension(ctx, screen, colour, text, k = 1) {
+  const [a, b] = [screen[0], screen[screen.length - 1]];
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const len = Math.hypot(dx, dy) || 1;
+  const tx = (-dy / len) * 6 * k;
+  const ty = (dx / len) * 6 * k;
+  ctx.save();
+  ctx.strokeStyle = colour;
+  ctx.lineWidth = 2 * k;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(a.x, a.y);
+  ctx.lineTo(b.x, b.y);
+  ctx.moveTo(a.x - tx, a.y - ty);
+  ctx.lineTo(a.x + tx, a.y + ty);
+  ctx.moveTo(b.x - tx, b.y - ty);
+  ctx.lineTo(b.x + tx, b.y + ty);
+  ctx.stroke();
+  ctx.restore();
+  strokeLabel(ctx, { x: (a.x + b.x) / 2 - 4 * k, y: (a.y + b.y) / 2 + 2 * k }, text, colour, k);
+}
+
+/**
  * The scale reference and every mark of one image record, in whatever
  * coordinates `toScreen` maps image pixels to. `k` scales the ink: 1 on
  * screen, larger when the drawing is made at the full resolution of the
@@ -115,10 +144,13 @@ export function paintMarks(ctx, record, toScreen, k = 1) {
       ctx.globalAlpha = 0.85;
       ctx.fill();
       ctx.restore();
+      strokeLabel(ctx, p, mark.label, colour, k);
+    } else if (mark.kind === 'ruler') {
+      strokeDimension(ctx, mark.points.map(toScreen), colour, mark.label, k);
     } else {
       strokePolyline(ctx, mark.points.map(toScreen), colour, { width: 2 * k });
+      strokeLabel(ctx, toScreen(mark.points[mark.points.length - 1]), mark.label, colour, k);
     }
-    strokeLabel(ctx, toScreen(mark.points[mark.points.length - 1]), mark.label, colour, k);
   }
 }
 

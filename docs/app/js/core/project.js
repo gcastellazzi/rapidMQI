@@ -67,6 +67,28 @@ export const VIEWS = [
 export const VIEW_IDS = VIEWS.map((v) => v.id);
 export const VIEW = Object.fromEntries(VIEWS.map((v) => [v.id, v]));
 
+/**
+ * The representative dimensions each view carries, in centimetres.
+ *
+ * The data sheets of the paper have a row of exactly these: the three sides of
+ * a typical block, written as ranges, and -- for the section -- the thickness
+ * of the wall and how many headers cross it. They are not decoration. Two of
+ * the qualitative criteria of Table 4 are comparisons between the wall
+ * thickness and the large dimension of the blocks, so a surveyor who writes
+ * down both has answered most of WC without knowing it.
+ */
+export const DIMENSIONS = {
+  section: [
+    { id: 't', label: 't', title: 'Wall thickness', unit: 'cm', placeholder: '55' },
+    { id: 'headers', label: 'headers', title: 'Headers per square metre', unit: '/m²', placeholder: '3' },
+  ],
+  block: [
+    { id: 'l', label: 'l', title: 'Length, the large dimension', unit: 'cm', placeholder: '24÷32' },
+    { id: 'h', label: 'h', title: 'Height', unit: 'cm', placeholder: '5÷6' },
+    { id: 's', label: 's', title: 'Depth into the wall', unit: 'cm', placeholder: '10÷13' },
+  ],
+};
+
 /** One photograph and everything measured on it. */
 export function makeImage() {
   return {
@@ -78,7 +100,20 @@ export function makeImage() {
     // are computed from them, never stored beside them and left to drift.
     marks: [], // { id, parameter, kind, points: [{x, y}], label }
     sketch: null, // 'NF' | 'PF' | 'F', when the view is drawn instead of shot
+    dimensions: {}, // the representative sizes above, as the text that was typed
   };
+}
+
+/** Every dimension of a panel, whichever view it was written on. */
+export function dimensionsOf(panel) {
+  const out = {};
+  for (const [view, fields] of Object.entries(DIMENSIONS)) {
+    for (const field of fields) {
+      const value = panel?.images?.[view]?.dimensions?.[field.id];
+      if (typeof value === 'string' && value.trim()) out[field.id] = value.trim();
+    }
+  }
+  return out;
 }
 
 /**

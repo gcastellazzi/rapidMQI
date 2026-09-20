@@ -36,6 +36,14 @@ The first working version: a survey can be taken, saved, reopened and printed.
   one for each outcome. Picking one assesses WC or SS and records the drawing;
   it is marked as drawn rather than photographed wherever it appears, including
   on the report.
+- **Representative dimensions** per view -- the three sides of a block, the
+  thickness of the wall, the headers per square metre -- kept as the text that
+  was typed, so that a range is as easy to write as a number, quoted on the
+  drawing they belong to, printed in a geometry row on the data sheet, and read
+  against the qualitative column of Table 4 as a suggestion for WC.
+- **Quotes on a photograph**: the ruler draws a dimension line with its value
+  on it and can be named, and a ruler drawn on a section is a dimension of the
+  wall for WC rather than a block sampled for SD.
 - **Projects** of several panels, with a comparative table.
 - **Files**: one JSON survey with the photographs inside it, a working copy
   kept in the browser, and a report of two sheets per wall -- the data sheet of

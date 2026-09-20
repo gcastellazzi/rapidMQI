@@ -55,6 +55,14 @@ out-of-plane actions. The index runs from 0 to 10 in every case.
   section and for the block, the application offers three diagrams -- one for each outcome -- and
   picking the one the wall is understood to be assesses the parameter and records the drawing.
   It is an inference rather than an observation, and it is labelled as one everywhere it appears.
+- **Representative dimensions**, written under the drawing they belong to and quoted on it as
+  they are typed: the three sides of a typical block, the thickness of the wall, the headers that
+  cross it -- the geometry row of the paper's own data sheets. Table 4 decides the leaf connection
+  by comparing the wall thickness with the large dimension of the blocks and by counting headers,
+  so a surveyor who has written both down is told what the table makes of them.
+- **Quotes on the photograph.** The ruler draws a dimension line with its value on it, and a quote
+  can be named -- "t = 118 cm" -- so that a section photograph carries its thickness the way a
+  drawing would. A quote on a section belongs to WC; a block measured on the face belongs to SD.
 - **Measurement on the photograph.** One known distance sets the scale. The ruler measures blocks
   and reports the **median** against the 20 cm and 40 cm thresholds, because Table 2 asks about
   more than half of the elements. The path tool traces the shortest route through the mortar

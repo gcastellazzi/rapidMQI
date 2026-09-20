@@ -130,6 +130,7 @@ function readImages(raw) {
         scale: readScale(from.scale),
         marks: Array.isArray(from.marks) ? from.marks.filter(isMark).map(readMark) : [],
         sketch: OUTCOME_IDS.includes(from.sketch) ? from.sketch : null,
+        dimensions: readDimensions(from.dimensions),
       };
     }
     return images;
@@ -139,6 +140,7 @@ function readImages(raw) {
     scale: readScale(raw.scale),
     marks: Array.isArray(raw.marks) ? raw.marks.filter(isMark).map(readMark) : [],
     sketch: null,
+    dimensions: {},
   };
   return images;
 }
@@ -177,6 +179,17 @@ function readScale(raw) {
   return { pixelsPerMetre: raw.pixelsPerMetre, reference: raw.reference ?? null };
 }
 
+/** Dimensions are free text, so they are cleaned rather than validated. */
+function readDimensions(raw) {
+  if (!isObject(raw)) return {};
+  const out = {};
+  for (const [key, value] of Object.entries(raw)) {
+    if (typeof value === 'string' && value.trim()) out[key] = value.trim().slice(0, 24);
+    else if (typeof value === 'number' && Number.isFinite(value)) out[key] = String(value);
+  }
+  return out;
+}
+
 const isObject = (v) => Boolean(v) && typeof v === 'object' && !Array.isArray(v);
 const isPoint = (p) => isObject(p) && Number.isFinite(p.x) && Number.isFinite(p.y);
 const isMark = (m) => isObject(m) && Array.isArray(m.points) && m.points.every(isPoint);
@@ -187,6 +200,8 @@ function readMark(raw) {
     parameter: typeof raw.parameter === 'string' ? raw.parameter : null,
     kind: typeof raw.kind === 'string' ? raw.kind : 'note',
     label: typeof raw.label === 'string' ? raw.label : '',
+    // What the surveyor called this quote: "t", "wall thickness", nothing.
+    name: typeof raw.name === 'string' ? raw.name.slice(0, 24) : '',
     points: raw.points.map((p) => ({ x: p.x, y: p.y })),
   };
 }

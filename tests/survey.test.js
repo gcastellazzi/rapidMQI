@@ -10,6 +10,7 @@ import {
   addPanel,
   activePanel,
   duplicatePanel,
+  dimensionsOf,
   imageOf,
   makePanel,
   makeProject,
@@ -20,7 +21,16 @@ import {
   summariseProject,
 } from '../docs/app/js/core/project.js';
 import { SurveyFileError, fileNameFor, parse, toJSON } from '../docs/app/js/core/persist.js';
-import { blockStatistics, checkChord, measure, scaleFrom } from '../docs/app/js/core/measure.js';
+import {
+  blockStatistics,
+  checkChord,
+  headerHint,
+  measure,
+  midOf,
+  parseDimension,
+  scaleFrom,
+  thicknessHint,
+} from '../docs/app/js/core/measure.js';
 import { ORDER } from '../docs/app/js/core/tables.js';
 
 const FIG12 = { WC: 'F', MM: 'PF', SS: 'F', VJ: 'F', SM: 'F', HJ: 'F', SD: 'F' };
@@ -274,6 +284,69 @@ test('block dimensions are judged by the median, as Table 2 asks', () => {
   assert.equal(small.suggested, 'NF');
   assert.equal(small.belowTwenty, 1);
   assert.equal(blockStatistics([]), null);
+});
+
+test('a dimension is whatever the surveyor wrote, and is read as a range', () => {
+  assert.deepEqual(parseDimension('30'), { min: 30, max: 30, text: '30' });
+  assert.deepEqual(parseDimension('15÷30'), { min: 15, max: 30, text: '15÷30' });
+  assert.deepEqual(parseDimension('20 - 40'), { min: 20, max: 40, text: '20 - 40' });
+  assert.equal(parseDimension('15,5').min, 15.5, 'a decimal comma is a decimal point');
+  assert.equal(parseDimension(''), null);
+  assert.equal(parseDimension('thick'), null);
+  assert.equal(parseDimension(null), null);
+  assert.equal(midOf('15÷30'), 22.5);
+  assert.equal(midOf('nothing'), null);
+});
+
+test('the wall thickness against the block reads Table 4, as a suggestion', () => {
+  assert.equal(thicknessHint('50', '45').outcome, 'F', 'similar');
+  assert.equal(thicknessHint('60', '40').outcome, 'PF', 'larger than');
+  assert.equal(thicknessHint('90', '25').outcome, 'NF', 'stones small by comparison');
+  assert.equal(thicknessHint('55', ''), null, 'one dimension alone says nothing');
+  assert.equal(thicknessHint('', '45'), null);
+  assert.equal(thicknessHint('', ''), null);
+  assert.match(thicknessHint('50', '45').text, /Table 4/);
+});
+
+test('the header count reads Table 4 as well', () => {
+  assert.equal(headerHint('0').outcome, 'NF');
+  assert.equal(headerHint('1.5').outcome, 'NF');
+  assert.equal(headerHint('2').outcome, 'PF');
+  assert.equal(headerHint('5').outcome, 'PF');
+  assert.equal(headerHint('8').outcome, 'F');
+  assert.equal(headerHint(''), null);
+});
+
+test('dimensions belong to a view and survive the round trip', () => {
+  const project = makeProject();
+  const panel = activePanel(project);
+  imageOf(panel, 'section').dimensions = { t: '55', headers: '3' };
+  imageOf(panel, 'block').dimensions = { l: '24÷32', h: '5÷6', s: '10÷13' };
+
+  assert.deepEqual(dimensionsOf(panel), {
+    t: '55',
+    headers: '3',
+    l: '24÷32',
+    h: '5÷6',
+    s: '10÷13',
+  });
+
+  const back = parse(toJSON(project));
+  assert.deepEqual(imageOf(back.panels[0], 'section').dimensions, { t: '55', headers: '3' });
+  assert.equal(imageOf(back.panels[0], 'block').dimensions.l, '24÷32');
+  // The two together are what Table 4 is read from.
+  assert.equal(thicknessHint('55', '24÷32').outcome, 'PF');
+});
+
+test('a survey written before dimensions existed still opens', () => {
+  const old = JSON.stringify({
+    app: 'rapidMQI',
+    schema: 1,
+    panels: [{ name: 'Wall', photo: null, scale: null, marks: [] }],
+  });
+  const panel = parse(old).panels[0];
+  assert.deepEqual(imageOf(panel, 'face').dimensions, {});
+  assert.deepEqual(dimensionsOf(panel), {});
 });
 
 test('a panel made from nothing is still a panel', () => {
