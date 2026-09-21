@@ -1220,12 +1220,15 @@ $('openFile').addEventListener('change', async (event) => {
   }
 });
 
-$('newProject').addEventListener('click', () => {
+function startNewEvaluation() {
   if (!window.confirm('Start again? The survey in this browser will be cleared.')) return;
   clearLocal();
   project = makeProject();
   switchPanel();
-});
+}
+
+$('newProject').addEventListener('click', startNewEvaluation);
+$('newEvaluation').addEventListener('click', startNewEvaluation);
 
 function download(name, text, type) {
   const url = URL.createObjectURL(new Blob([text], { type }));

@@ -3,6 +3,7 @@
 
 # Local editor/agent scratch
 .claude/
+.local-audit/
 
 # Surveys and photographs are the user's, and some of them are of buildings
 # whose owners did not agree to have them published. Nothing that comes out of
