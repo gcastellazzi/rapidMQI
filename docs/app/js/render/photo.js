@@ -43,6 +43,9 @@ const COLOURS = {
 };
 
 const FONT = (size) => `${size}px Arial, Helvetica, sans-serif`;
+const SCALE_BAR_INSET = 16;
+const SCALE_BAR_GAP = 6;
+const SCALE_BAR_HEIGHT = 7;
 
 // -------------------------------------------------------------- shared ink --
 
@@ -154,27 +157,87 @@ export function paintMarks(ctx, record, toScreen, k = 1) {
   }
 }
 
-/** A chequered bar one metre long, when the photograph has a scale. */
+function cleanNumber(value) {
+  return String(Math.round(value * 1000) / 1000);
+}
+
+export function formatScaleLength(metres) {
+  if (!(metres > 0)) return '';
+  if (metres >= 1000) return `${cleanNumber(metres / 1000)} km`;
+  if (metres >= 1) return `${cleanNumber(metres)} m`;
+  if (metres >= 0.01) return `${cleanNumber(metres * 100)} cm`;
+  return `${cleanNumber(metres * 1000)} mm`;
+}
+
+function* scaleLengthsAtMost(maxMetres) {
+  if (!(maxMetres > 0)) return;
+  const firstPower = Math.floor(Math.log10(maxMetres));
+  for (let power = firstPower; power > firstPower - 12; power -= 1) {
+    const base = 10 ** power;
+    for (const factor of [5, 2, 1]) {
+      const metres = factor * base;
+      if (metres <= maxMetres * (1 + Number.EPSILON)) yield metres;
+    }
+  }
+}
+
+export function scaleBarSpec({ perMetre, zoom, width, k = 1, labelWidth = () => 0 }) {
+  const pixelsPerMetre = perMetre * zoom;
+  const available = width - SCALE_BAR_INSET * 2 * k;
+  if (!(pixelsPerMetre > 0) || !(available > 24 * k)) return null;
+
+  for (const metres of scaleLengthsAtMost(available / pixelsPerMetre)) {
+    const label = formatScaleLength(metres);
+    const barWidth = metres * pixelsPerMetre;
+    if (barWidth + SCALE_BAR_GAP * k + labelWidth(label) <= available) {
+      return { metres, label, width: barWidth };
+    }
+  }
+  return null;
+}
+
+/** A chequered scale bar, overlaid on the canvas when the photograph has a scale. */
 function paintScaleBar(ctx, record, { w, h, zoom, k = 1 }) {
   const perMetre = record?.scale?.pixelsPerMetre;
   if (!perMetre) return;
-  const onScreen = perMetre * zoom;
-  if (!(onScreen > 20 * k) || onScreen > w * 0.8) return;
-  const x = 16 * k;
-  const y = h - 26 * k;
-  const height = 7 * k;
-  const segments = 4;
   ctx.save();
+  ctx.font = FONT(11 * k);
+  const spec = scaleBarSpec({
+    perMetre,
+    zoom,
+    width: w,
+    k,
+    labelWidth: (label) => ctx.measureText(label).width,
+  });
+  if (!spec) {
+    ctx.restore();
+    return;
+  }
+
+  const x = SCALE_BAR_INSET * k;
+  const y = h - 26 * k;
+  const height = SCALE_BAR_HEIGHT * k;
+  const segments = 4;
+  const labelWidth = ctx.measureText(spec.label).width;
+  const platePad = 5 * k;
+  const plateWidth = spec.width + SCALE_BAR_GAP * k + labelWidth + platePad * 2;
+  const plateHeight = height + platePad * 2;
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.88)';
+  ctx.strokeStyle = 'rgba(33, 59, 62, 0.22)';
+  ctx.lineWidth = Math.max(1, k);
+  ctx.fillRect(x - platePad, y - platePad, plateWidth, plateHeight);
+  ctx.strokeRect(x - platePad, y - platePad, plateWidth, plateHeight);
+
   for (let i = 0; i < segments; i += 1) {
     ctx.fillStyle = i % 2 ? '#ffffff' : '#213b3e';
-    ctx.fillRect(x + (onScreen * i) / segments, y, onScreen / segments, height);
+    ctx.fillRect(x + (spec.width * i) / segments, y, spec.width / segments, height);
   }
   ctx.strokeStyle = '#213b3e';
   ctx.lineWidth = Math.max(1, k);
-  ctx.strokeRect(x, y, onScreen, height);
+  ctx.strokeRect(x, y, spec.width, height);
   ctx.fillStyle = '#213b3e';
-  ctx.font = FONT(11 * k);
-  ctx.fillText('1 m', x + onScreen + 6 * k, y + height + k);
+  ctx.textBaseline = 'middle';
+  ctx.fillText(spec.label, x + spec.width + SCALE_BAR_GAP * k, y + height / 2);
   ctx.restore();
 }
 
